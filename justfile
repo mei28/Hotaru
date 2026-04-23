@@ -1,0 +1,72 @@
+set shell := ["bash", "-ceuo", "pipefail"]
+
+# プロジェクト設定
+project       := "Hotaru"
+scheme        := "Hotaru"
+configuration := "Debug"
+derived_data  := "./build"
+# Xcode プロジェクトは Hotaru/ サブフォルダに入れ子
+xcodeproj     := "Hotaru/Hotaru.xcodeproj"
+app_path      := derived_data / "Build/Products" / configuration / (project + ".app")
+
+# デフォルト: レシピ一覧
+default:
+    @just --list
+
+# 環境チェック(Phase 0 で最初に使う)
+doctor:
+    @echo "==== macOS ===="
+    @sw_vers
+    @echo
+    @echo "==== xcode-select ===="
+    @xcode-select -p
+    @echo
+    @echo "==== xcodebuild ===="
+    @xcodebuild -version 2>&1 || echo "  ✗ xcodebuild 未利用可(Xcode.app が必要)"
+    @echo
+    @echo "==== swift ===="
+    @swift --version 2>&1 || echo "  ✗ swift 未利用可"
+    @echo
+    @echo "==== sourcekit-lsp ===="
+    @xcrun --find sourcekit-lsp 2>/dev/null && echo "  ✓ 利用可" || echo "  ✗ 未検出"
+    @echo
+    @echo "==== 補助ツール ===="
+    @command -v just              >/dev/null && echo "  ✓ just"              || echo "  ✗ just"
+    @command -v xcode-build-server >/dev/null && echo "  ✓ xcode-build-server" || echo "  ✗ xcode-build-server(brew install xcode-build-server)"
+    @command -v xcbeautify        >/dev/null && echo "  ✓ xcbeautify"        || echo "  ✗ xcbeautify(brew install xcbeautify)"
+
+# ビルド
+build:
+    set -o pipefail && xcodebuild \
+        -project {{xcodeproj}} \
+        -scheme {{scheme}} \
+        -configuration {{configuration}} \
+        -derivedDataPath {{derived_data}} \
+        build | xcbeautify
+
+# ビルドして起動
+run: build
+    open {{app_path}}
+
+# 成果物の場所を表示
+where:
+    @echo {{app_path}}
+
+# クリーン
+clean:
+    rm -rf {{derived_data}}
+
+# LSP 用の設定生成(xcode-build-server)
+# nvim の sourcekit-lsp が .xcodeproj の補完を効かせるために必要
+# buildServer.json はプロジェクトルートに生成される
+lsp:
+    xcode-build-server config -project {{xcodeproj}} -scheme {{scheme}}
+
+# 初回セットアップのチェックリストを表示
+setup:
+    @echo "1) Xcode.app をインストール(App Store)"
+    @echo "2) sudo xcode-select -s /Applications/Xcode.app"
+    @echo "3) brew install just xcode-build-server xcbeautify"
+    @echo "4) Xcode で Hotaru プロジェクトを生成(Phase 0 の手順参照)"
+    @echo "5) just lsp   # nvim で補完を効かせる"
+    @echo "6) just doctor # 環境確認"

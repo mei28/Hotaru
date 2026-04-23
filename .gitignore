@@ -1,0 +1,46 @@
+# ==== Xcode ====
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# ==== Swift Package Manager ====
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# ==== LSP / xcode-build-server ====
+# buildServer.json は設定なのでコミットする
+# compile_commands.json は生成物なので無視
+compile_commands.json
+
+# ==== macOS ====
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ==== Editor ====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ==== ローカル専用 ====
+.tmp/
+.env
+.env.local
