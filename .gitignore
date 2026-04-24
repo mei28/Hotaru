@@ -48,6 +48,9 @@ compile_commands.json
 # ==== 配布成果物 ====
 dist/
 
+# ==== Claude Code ローカル設定 ====
+.claude/settings.local.json
+
 # ==== ローカル専用 ====
 .tmp/
 .env
