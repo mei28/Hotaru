@@ -35,7 +35,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // automatically, which is simpler than calling NSWindow's designated
         // init directly.
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Hotaru 設定"
+        window.title = String(localized: "Hotaru Settings")
         window.styleMask = [.titled, .closable]
 
         // Important: do NOT release the window when it closes.

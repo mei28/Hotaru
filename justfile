@@ -56,6 +56,14 @@ run: build
 run-fg: build
     {{app_path}}/Contents/MacOS/{{project}}
 
+# 日本語ロケールを強制して前景実行(ローカライゼーションの確認用)
+run-ja: build
+    {{app_path}}/Contents/MacOS/{{project}} -AppleLanguages '(ja)'
+
+# 英語ロケールを強制して前景実行
+run-en: build
+    {{app_path}}/Contents/MacOS/{{project}} -AppleLanguages '(en)'
+
 # os.Logger の出力を Console に流す(os_log / Logger で書いたものをリアルタイム表示)
 log:
     log stream --predicate 'subsystem == "{{subsystem}}"' --level debug

@@ -66,15 +66,15 @@ enum AccessibilityChecker {
         guard !isTrusted else { return }
 
         let alert = NSAlert()
-        alert.messageText = "アクセシビリティ権限が必要です"
-        alert.informativeText = """
-        Hotaru はアクティブウィンドウを検出するためにアクセシビリティ権限を必要とします。
-        「システム設定を開く」を押し、リスト内の Hotaru をオンにしたあと、
-        Hotaru を一度終了して再起動してください。
-        """
+        alert.messageText = String(localized: "Accessibility permission required")
+        alert.informativeText = String(localized: """
+            Hotaru needs Accessibility permission to detect the active window.
+            Open System Settings, enable Hotaru in the list, then quit and \
+            restart Hotaru.
+            """)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "システム設定を開く")  // -> .alertFirstButtonReturn
-        alert.addButton(withTitle: "あとで")              // -> .alertSecondButtonReturn
+        alert.addButton(withTitle: String(localized: "Open System Settings"))  // -> .alertFirstButtonReturn
+        alert.addButton(withTitle: String(localized: "Later"))                 // -> .alertSecondButtonReturn
 
         // runModal() is a synchronous modal — blocks until the user clicks.
         // The return value is NSApplication.ModalResponse

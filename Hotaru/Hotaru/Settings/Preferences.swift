@@ -52,6 +52,18 @@ final class Preferences: ObservableObject {
         }
     }
 
+    // UI language preference. Writing to it updates the global
+    // "AppleLanguages" UserDefaults key, which macOS uses at bundle load time
+    // to pick a localization. SwiftUI views reading the current Locale can
+    // switch live via `.environment(\.locale, ...)`; AppKit strings captured
+    // at launch (menu bar titles, menu item titles) apply on relaunch.
+    @Published var preferredLanguage: AppLanguage {
+        didSet {
+            defaults.set(preferredLanguage.rawValue, forKey: Key.preferredLanguage)
+            applyPreferredLanguage()
+        }
+    }
+
     // MARK: - Defaults
 
     static let defaultColorLight = NSColor(
@@ -63,15 +75,17 @@ final class Preferences: ObservableObject {
     static let defaultBorderWidth: CGFloat = 3
     static let defaultIsEnabled = true
     static let defaultLaunchAtLogin = true
+    static let defaultLanguage: AppLanguage = .system
 
     // MARK: - UserDefaults keys (matches SPEC §6.1)
 
     private enum Key {
-        static let isEnabled        = "hotaru.isEnabled"
-        static let borderColorLight = "hotaru.borderColor.light"
-        static let borderColorDark  = "hotaru.borderColor.dark"
-        static let borderWidth      = "hotaru.borderWidth"
-        static let launchAtLogin    = "hotaru.launchAtLogin"
+        static let isEnabled         = "hotaru.isEnabled"
+        static let borderColorLight  = "hotaru.borderColor.light"
+        static let borderColorDark   = "hotaru.borderColor.dark"
+        static let borderWidth       = "hotaru.borderWidth"
+        static let launchAtLogin     = "hotaru.launchAtLogin"
+        static let preferredLanguage = "hotaru.preferredLanguage"
     }
 
     private let defaults = UserDefaults.standard
@@ -82,9 +96,10 @@ final class Preferences: ObservableObject {
         // NSColor is not plist-compatible, so we don't register a default for
         // it here — the loader falls back to a hardcoded default instead.
         defaults.register(defaults: [
-            Key.isEnabled:     Self.defaultIsEnabled,
-            Key.borderWidth:   Double(Self.defaultBorderWidth),
-            Key.launchAtLogin: Self.defaultLaunchAtLogin,
+            Key.isEnabled:         Self.defaultIsEnabled,
+            Key.borderWidth:       Double(Self.defaultBorderWidth),
+            Key.launchAtLogin:     Self.defaultLaunchAtLogin,
+            Key.preferredLanguage: Self.defaultLanguage.rawValue,
         ])
 
         // Load initial values.
@@ -99,11 +114,18 @@ final class Preferences: ObservableObject {
             ?? Self.defaultColorDark
         self.borderWidth = CGFloat(defaults.double(forKey: Key.borderWidth))
         self.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
+        self.preferredLanguage = AppLanguage(
+            rawValue: defaults.string(forKey: Key.preferredLanguage) ?? ""
+        ) ?? Self.defaultLanguage
 
         // Reconcile UserDefaults with the actual registration state, in case
         // the user enabled launch-at-login previously but later disabled it
         // via System Settings manually.
         syncLaunchAtLoginState()
+
+        // Re-apply the language preference at launch so that a manual edit of
+        // UserDefaults (or an external reset of AppleLanguages) is overridden.
+        applyPreferredLanguage()
     }
 
     // MARK: - Login item
@@ -137,6 +159,47 @@ final class Preferences: ObservableObject {
         }
     }
 
+    // MARK: - Language
+
+    // Write the user's language choice into the special "AppleLanguages"
+    // UserDefaults key. macOS reads this at bundle load time to choose
+    // localizations. Setting .system removes the key so the system falls back
+    // to its default ordering.
+    private func applyPreferredLanguage() {
+        let key = "AppleLanguages"
+        switch preferredLanguage {
+        case .system:
+            defaults.removeObject(forKey: key)
+        case .english:
+            defaults.set(["en"], forKey: key)
+        case .japanese:
+            defaults.set(["ja"], forKey: key)
+        }
+    }
+
+    // Relaunch the app so that AppKit-side strings (menu bar, alerts) pick up
+    // the new localization. SwiftUI views can switch live via
+    // `.environment(\.locale, ...)`, but AppKit strings are resolved once at
+    // launch.
+    func relaunchApp() {
+        let bundleURL = Bundle.main.bundleURL
+        // Use /usr/bin/open -n to launch a fresh instance, even if Hotaru is
+        // already running. The current process then terminates itself after a
+        // short delay so the replacement has time to come up.
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", bundleURL.path]
+        do {
+            try task.run()
+        } catch {
+            NSLog("[Preferences] relaunch failed: \(error)")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NSApp.terminate(nil)
+        }
+    }
+
     // MARK: - Actions
 
     func resetToDefaults() {
@@ -145,6 +208,7 @@ final class Preferences: ObservableObject {
         borderColorDark  = Self.defaultColorDark
         borderWidth = Self.defaultBorderWidth
         launchAtLogin = Self.defaultLaunchAtLogin
+        preferredLanguage = Self.defaultLanguage
     }
 
     // MARK: - NSColor persistence

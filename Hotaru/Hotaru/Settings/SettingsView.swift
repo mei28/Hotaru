@@ -17,18 +17,35 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Hotaru を有効にする", isOn: $preferences.isEnabled)
-                Toggle("ログイン時に起動する", isOn: $preferences.launchAtLogin)
+                Toggle("Enable Hotaru", isOn: $preferences.isEnabled)
+                Toggle("Launch at login", isOn: $preferences.launchAtLogin)
             }
 
-            Section("ボーダー") {
+            Section("Language") {
+                // Picker bound to preferences.preferredLanguage. Picker itself
+                // auto-localizes its label; the row labels come from
+                // AppLanguage.displayName.
+                Picker("Language", selection: $preferences.preferredLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+                Text("Menu bar and system dialogs update after relaunch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Relaunch Hotaru") {
+                    preferences.relaunchApp()
+                }
+            }
+
+            Section("Border") {
                 ColorPicker(
-                    "色 (ライトモード)",
+                    "Color (Light mode)",
                     selection: lightColorBinding,
                     supportsOpacity: false
                 )
                 ColorPicker(
-                    "色 (ダークモード)",
+                    "Color (Dark mode)",
                     selection: darkColorBinding,
                     supportsOpacity: false
                 )
@@ -36,7 +53,7 @@ struct SettingsView: View {
                 // Slider binds to Double; the CGFloat <-> Double conversion
                 // happens inside the custom Binding.
                 HStack {
-                    Text("幅")
+                    Text("Width")
                     Slider(value: widthBinding, in: 1...10, step: 1)
                     Text("\(Int(preferences.borderWidth))px")
                         .monospacedDigit()  // equal digit widths so the value does not jitter
@@ -44,20 +61,25 @@ struct SettingsView: View {
                 }
             }
 
-            Section("プレビュー") {
+            Section("Preview") {
                 previewRect
                     .frame(height: 80)
                     .frame(maxWidth: .infinity)
             }
 
             Section {
-                Button("デフォルトに戻す") {
+                Button("Restore defaults") {
                     preferences.resetToDefaults()
                 }
             }
         }
         .formStyle(.grouped)  // card-based style, similar to macOS System Settings
-        .frame(width: 480, height: 520)
+        .frame(width: 480, height: 640)
+        // Override the locale for this view tree so Text()/Button() etc. can
+        // live-switch their localization when the user picks a language.
+        // Only affects SwiftUI strings rendered underneath — AppKit-side text
+        // (menu bar, NSAlert) still needs a relaunch to follow suit.
+        .environment(\.locale, preferences.preferredLanguage.locale)
     }
 
     // MARK: - Preview

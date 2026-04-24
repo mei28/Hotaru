@@ -59,7 +59,7 @@ final class MenuBarController: NSObject {
 
         // 2. Settings… (Cmd+,)
         menu.addItem(makeItem(
-            title: "設定…",
+            title: String(localized: "Settings…"),
             action: #selector(openSettings(_:)),
             key: ","
         ))
@@ -68,14 +68,14 @@ final class MenuBarController: NSObject {
 
         // 3. About
         menu.addItem(makeItem(
-            title: "Hotaru について…",
+            title: String(localized: "About Hotaru"),
             action: #selector(openAbout(_:)),
             key: ""
         ))
 
         // 4. Quit
         menu.addItem(makeItem(
-            title: "Hotaru を終了",
+            title: String(localized: "Quit Hotaru"),
             action: #selector(quitApp(_:)),
             key: "q"
         ))
@@ -91,7 +91,9 @@ final class MenuBarController: NSObject {
     }
 
     private func toggleTitle(for isEnabled: Bool) -> String {
-        isEnabled ? "Hotaru を無効にする" : "Hotaru を有効にする"
+        isEnabled
+            ? String(localized: "Disable Hotaru")
+            : String(localized: "Enable Hotaru")
     }
 
     // MARK: - Subscriptions
