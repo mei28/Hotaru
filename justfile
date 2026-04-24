@@ -8,6 +8,8 @@ derived_data  := "./build"
 # Xcode プロジェクトは Hotaru/ サブフォルダに入れ子
 xcodeproj     := "Hotaru/Hotaru.xcodeproj"
 app_path      := derived_data / "Build/Products" / configuration / (project + ".app")
+release_app   := derived_data / "Build/Products/Release" / (project + ".app")
+dist_dir      := "./dist"
 subsystem     := "com.waddlier.Hotaru"
 
 # デフォルト: レシピ一覧
@@ -74,7 +76,31 @@ where:
 
 # クリーン
 clean:
-    rm -rf {{derived_data}}
+    rm -rf {{derived_data}} {{dist_dir}}
+
+# Release ビルド + .zip 化(成果物: dist/Hotaru-<version>.zip)。
+# GitHub Actions からも同じレシピを呼ぶので、ローカルと CI でパイプを統一できる。
+release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p {{dist_dir}}
+    xcodebuild \
+        -project {{xcodeproj}} \
+        -scheme {{scheme}} \
+        -configuration Release \
+        -destination "platform=macOS,arch=arm64" \
+        -derivedDataPath {{derived_data}} \
+        build | xcbeautify
+    VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "{{release_app}}/Contents/Info.plist")
+    DIST="$PWD/{{dist_dir}}/{{project}}-${VERSION}.zip"
+    rm -f "$DIST"
+    (cd "$(dirname {{release_app}})" && zip -qry "$DIST" "$(basename {{release_app}})")
+    echo "Wrote $DIST"
+
+# pbxproj の MARKETING_VERSION を指定値に置換(例: just version 1.2.3)
+version v:
+    sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = {{v}};/' {{xcodeproj}}/project.pbxproj
+    @grep -m 1 "MARKETING_VERSION" {{xcodeproj}}/project.pbxproj
 
 # LSP 用の設定生成(xcode-build-server)
 # nvim の sourcekit-lsp が .xcodeproj の補完を効かせるために必要

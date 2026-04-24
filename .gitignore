@@ -45,6 +45,9 @@ compile_commands.json
 *.swo
 *~
 
+# ==== 配布成果物 ====
+dist/
+
 # ==== ローカル専用 ====
 .tmp/
 .env
