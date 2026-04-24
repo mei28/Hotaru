@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 必要なので、ライフサイクルを制御するために AppDelegate が所有する。
     private var focusTracker: FocusTracker?
 
+    // OverlayController: 透明ウィンドウの指揮係。
+    private var overlayController: OverlayController?
+
     // アプリ起動が完了したタイミングで呼ばれる。
     // NSApp が既に初期化済みで、UI を組み立てるのに安全な最初のポイント。
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -30,8 +33,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 権限がある場合は何もしないので毎回呼んで OK。
         AccessibilityChecker.requestAccessIfNeeded()
 
-        // Phase 3: フロントアプリ切り替えの追跡を開始。
-        // 現段階ではコンソールにログ出力するだけ。ウィンドウ座標の取得は Phase 4 で。
-        focusTracker = FocusTracker()
+        // Phase 5: オーバーレイウィンドウを先に生成してから、
+        // FocusTracker → OverlayController のコールバック配線を組む。
+        let overlay = OverlayController()
+        overlayController = overlay
+
+        // Phase 3+4+5: フロントアプリ追跡 + AX 問い合わせ + オーバーレイ再配置を接続。
+        // [weak overlay] は循環参照回避(AppDelegate → FocusTracker → closure → OverlayController
+        // のうち、closure が overlay を強参照するとループ構造になりうる)。
+        // overlay は AppDelegate が強参照で生かしているので、closure 側は弱参照で十分。
+        let tracker = FocusTracker()
+        tracker.onFocusChanged = { [weak overlay] _, info in
+            overlay?.update(windowInfo: info)
+        }
+        focusTracker = tracker
+
+        // クロージャを繋いだ状態で初期状態を発火(起動直後のフロントアプリに枠を付ける)
+        tracker.emitInitial()
     }
 }

@@ -6,6 +6,16 @@ import AppKit
 // アクティブウィンドウの座標を取得する処理に拡張する。
 final class FocusTracker: NSObject {
 
+    // フォーカスが変わるたびに呼ばれるコールバック。
+    // AppDelegate / OverlayController 側でオーバーレイの位置更新に使う。
+    //
+    // @escaping は「このクロージャは関数終了後も保持される」ことをコンパイラに伝える属性。
+    // 関数ローカルの一時クロージャ(@escaping でない)はスタック格納で安く済むが、
+    // インスタンスプロパティに溜めるような用途には @escaping が必要。
+    //
+    // Optional にしてあるのは、セットされる前でもクラス自体は動けるようにするため。
+    var onFocusChanged: ((NSRunningApplication, WindowInfo?) -> Void)?
+
     override init() {
         super.init()
 
@@ -25,12 +35,15 @@ final class FocusTracker: NSObject {
             object: nil
         )
 
-        // 起動時点で既に前面にいるアプリは、上記通知では拾えない(切替が起きないので)。
-        // 初期状態を 1 回だけログっておく。
-        // NSWorkspace.frontmostApplication は Optional なので if let で取り出す。
+        // 初期状態は init 時点では発火しない(クロージャがまだセットされていないため)。
+        // 購読側(AppDelegate)が onFocusChanged を設定した後に emitInitial() を呼ぶ。
+    }
+
+    // 起動時のフロントアプリを 1 回だけ通知する。
+    // init と分離してあるのは、init 内では onFocusChanged がまだ nil のため。
+    func emitInitial() {
         if let app = NSWorkspace.shared.frontmostApplication {
-            logActive(app, reason: "initial")
-            logFocusedWindow(for: app)
+            handleActivation(app, reason: "initial")
         }
     }
 
@@ -51,8 +64,16 @@ final class FocusTracker: NSObject {
                 as? NSRunningApplication else {
             return
         }
-        logActive(app, reason: "switch")
-        logFocusedWindow(for: app)
+        handleActivation(app, reason: "switch")
+    }
+
+    // ログ出力と AX 問い合わせ、コールバック呼び出しを一箇所にまとめる。
+    // init / switch の両経路から同じ処理を走らせるためのハブ。
+    private func handleActivation(_ app: NSRunningApplication, reason: String) {
+        logActive(app, reason: reason)
+        let info = AXWindowQuery.focusedWindowInfo(pid: app.processIdentifier)
+        logFocusedWindow(info)
+        onFocusChanged?(app, info)
     }
 
     private func logActive(_ app: NSRunningApplication, reason: String) {
@@ -64,10 +85,10 @@ final class FocusTracker: NSObject {
         print("[FocusTracker \(reason)] \(name) — \(bundleID) — pid=\(pid)")
     }
 
-    // Phase 4: AX 経由でフォーカスウィンドウの座標を取得し、AX 座標と Cocoa 座標の両方を出す。
+    // handleActivation で既に取得済みの WindowInfo を受け取ってログ化するだけに変えた。
     // Electron 系アプリ(Slack / Dia など)は AX ツリーが貧弱で nil が返ることがある。
-    private func logFocusedWindow(for app: NSRunningApplication) {
-        guard let info = AXWindowQuery.focusedWindowInfo(pid: app.processIdentifier) else {
+    private func logFocusedWindow(_ info: WindowInfo?) {
+        guard let info = info else {
             print("  └ no focused window (AX 未許可 / 対象アプリが応答なし / ウィンドウ無し)")
             return
         }
