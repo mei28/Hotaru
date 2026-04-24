@@ -102,6 +102,36 @@ version v:
     sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = {{v}};/' {{xcodeproj}}/project.pbxproj
     @grep -m 1 "MARKETING_VERSION" {{xcodeproj}}/project.pbxproj
 
+# /Applications に配置して手元で使えるようにする。
+# - release ビルド(署名は ad-hoc のまま)
+# - 既に起動中なら停止(Finder などから開いていると置き換えに失敗するため)
+# - 既存をまるごと置き換える(ditto は xattr/権限をきれいに保つ)
+install: release
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkill -x {{project}} 2>/dev/null || true
+    DEST="/Applications/{{project}}.app"
+    rm -rf "$DEST"
+    ditto "{{release_app}}" "$DEST"
+    # Gatekeeper の quarantine 属性が付いていたら念のため外す(ローカルビルドなので通常は無い)
+    xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+    echo ""
+    echo "Installed to $DEST"
+    echo ""
+    echo "Next steps:"
+    echo "  1. open $DEST   (first launch only; right-click > Open if Gatekeeper blocks)"
+    echo "  2. Grant Accessibility permission when prompted"
+    echo "     (System Settings > Privacy & Security > Accessibility > enable Hotaru)"
+    echo "  3. Quit and relaunch Hotaru so permission is picked up"
+
+# /Applications から Hotaru を削除
+uninstall:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkill -x {{project}} 2>/dev/null || true
+    rm -rf "/Applications/{{project}}.app"
+    echo "Removed /Applications/{{project}}.app"
+
 # LSP 用の設定生成(xcode-build-server)
 # nvim の sourcekit-lsp が .xcodeproj の補完を効かせるために必要
 # buildServer.json はプロジェクトルートに生成される

@@ -57,6 +57,16 @@ just release  # release build + zip into ./dist/
 
 Run `just --list` for all recipes (build, run, run-fg, run-ja, run-en, log, lsp, release, version, clean).
 
+### Install locally from source
+
+If you just want to run Hotaru on your own Mac without going through a GitHub release:
+
+```bash
+just install    # Release build -> /Applications/Hotaru.app (ad-hoc signed)
+```
+
+The recipe stops any running instance, replaces `/Applications/Hotaru.app` with the fresh build, and strips the quarantine attribute. Because the binary path changes, macOS treats the installed copy as a different app — grant Accessibility permission again for `/Applications/Hotaru.app` on first launch. `just uninstall` removes it.
+
 ### Editing in nvim
 
 The project uses `PBXFileSystemSynchronizedRootGroup` (Xcode 16+), so any `.swift` file placed under `Hotaru/Hotaru/` is automatically added to the target — no Xcode GUI steps required.
