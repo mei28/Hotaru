@@ -24,6 +24,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // OverlayController: 透明ウィンドウの指揮係。
     private var overlayController: OverlayController?
 
+    // 現在アクティブなアプリ用の AX 観測器。アプリが切り替わるたびに作り直す。
+    // 古い observer は置き換え時に deinit → AXObserver / RunLoop source が自動で片付く。
+    private var windowObserver: WindowObserver?
+
     // アプリ起動が完了したタイミングで呼ばれる。
     // NSApp が既に初期化済みで、UI を組み立てるのに安全な最初のポイント。
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -38,17 +42,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlay = OverlayController()
         overlayController = overlay
 
-        // Phase 3+4+5: フロントアプリ追跡 + AX 問い合わせ + オーバーレイ再配置を接続。
-        // [weak overlay] は循環参照回避(AppDelegate → FocusTracker → closure → OverlayController
-        // のうち、closure が overlay を強参照するとループ構造になりうる)。
-        // overlay は AppDelegate が強参照で生かしているので、closure 側は弱参照で十分。
+        // Phase 3+4+5+6: アプリ切替でオーバーレイ即時更新 + そのアプリ用 AX 観測器を張り替え。
+        // [weak self, weak overlay] で循環参照回避。AppDelegate / OverlayController は
+        // どちらも AppDelegate が強参照しているので、closure 側は弱で十分。
         let tracker = FocusTracker()
-        tracker.onFocusChanged = { [weak overlay] _, info in
+        tracker.onFocusChanged = { [weak self, weak overlay] app, info in
             overlay?.update(windowInfo: info)
+            self?.rebindWindowObserver(for: app)
         }
         focusTracker = tracker
 
         // クロージャを繋いだ状態で初期状態を発火(起動直後のフロントアプリに枠を付ける)
         tracker.emitInitial()
+    }
+
+    // Phase 6: アクティブアプリが変わるたびに新しい WindowObserver に張り替える。
+    // 旧 observer は代入により解放され、deinit で notification / run-loop source が外れる。
+    private func rebindWindowObserver(for app: NSRunningApplication) {
+        // closure が overlayController を弱参照するためのローカル束縛
+        let overlay = overlayController
+        windowObserver = WindowObserver(
+            pid: app.processIdentifier
+        ) { [weak overlay] info in
+            // move/resize/focus-change の通知が来るたびに呼ばれる
+            overlay?.update(windowInfo: info)
+        }
     }
 }

@@ -19,19 +19,23 @@ enum AXWindowQuery {
     //   - Electron アプリなど AX ツリーが貧弱でフォーカスウィンドウが取れない
     static func focusedWindowInfo(pid: pid_t) -> WindowInfo? {
         // pid からアプリのルート AX 要素を作る。戻り値は AXUIElement 型(CF 型)。
-        // AXUIElementCreate*系の関数は "Create/Copy" 命名規約なので本来 Retain 済みだが、
-        // Swift 側は ARC で自動解放される仕組みに包まれている。
         let appElement = AXUIElementCreateApplication(pid)
-
-        // アプリ → フォーカスウィンドウ(= 最前面でアクティブなウィンドウ)を取り出す
-        guard let windowElement = copyElement(
-            from: appElement,
-            attribute: kAXFocusedWindowAttribute
-        ) else {
+        guard let windowElement = focusedWindowElement(for: appElement) else {
             return nil
         }
+        return windowInfo(from: windowElement)
+    }
 
-        // ウィンドウ → 位置とサイズ(それぞれ AXValue にラップされた CGPoint / CGSize)
+    // アプリ要素からフォーカスウィンドウの AXUIElement を取得。
+    // Phase 6 の WindowObserver が、アプリレベルで kAXFocusedWindowChangedNotification を
+    // 受けた後に新しい focused window element を取り直すのに使う。
+    static func focusedWindowElement(for appElement: AXUIElement) -> AXUIElement? {
+        copyElement(from: appElement, attribute: kAXFocusedWindowAttribute)
+    }
+
+    // ウィンドウ要素から現在の位置・サイズを取り出して WindowInfo にする。
+    // 移動・リサイズ通知を受けたあとで「今のフレーム」を読み直す用途。
+    static func windowInfo(from windowElement: AXUIElement) -> WindowInfo? {
         var position = CGPoint.zero
         var size = CGSize.zero
         guard copyAXValueInto(
@@ -49,7 +53,6 @@ enum AXWindowQuery {
         else {
             return nil
         }
-
         return WindowInfo(position: position, size: size)
     }
 
@@ -100,7 +103,13 @@ enum AXWindowQuery {
         // 中身は AXValue(CGPoint/CGSize などの "不透明コンテナ")。
         // AXValueGetValue で `valueType` に合う形で書き出させる。
         // valueType と T の組み合わせがミスマッチでも AXValueGetValue が false を返して済む。
+        //
+        // `&result` を直接渡すと UnsafeMutableRawPointer に暗黙変換されるが、T が参照型だった
+        // 場合の誤解釈を避けるため withUnsafeMutablePointer で明示的に型付きポインタを作り、
+        // そこから Raw ポインタに落とす。
         let axValue = value as! AXValue
-        return AXValueGetValue(axValue, valueType, &result)
+        return withUnsafeMutablePointer(to: &result) { ptr in
+            AXValueGetValue(axValue, valueType, UnsafeMutableRawPointer(ptr))
+        }
     }
 }
