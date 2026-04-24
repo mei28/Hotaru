@@ -17,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // (Rust で Arc<T> を保持しないと drop されるのと同じ感覚)
     private var menuBarController: MenuBarController?
 
+    // FocusTracker も同様に強参照保持。deinit で NotificationCenter.removeObserver が
+    // 必要なので、ライフサイクルを制御するために AppDelegate が所有する。
+    private var focusTracker: FocusTracker?
+
     // アプリ起動が完了したタイミングで呼ばれる。
     // NSApp が既に初期化済みで、UI を組み立てるのに安全な最初のポイント。
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -25,5 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Phase 2: AX 権限をチェックし、なければ誘導アラートを出す。
         // 権限がある場合は何もしないので毎回呼んで OK。
         AccessibilityChecker.requestAccessIfNeeded()
+
+        // Phase 3: フロントアプリ切り替えの追跡を開始。
+        // 現段階ではコンソールにログ出力するだけ。ウィンドウ座標の取得は Phase 4 で。
+        focusTracker = FocusTracker()
     }
 }

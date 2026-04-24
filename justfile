@@ -36,17 +36,24 @@ doctor:
     @command -v xcbeautify        >/dev/null && echo "  ✓ xcbeautify"        || echo "  ✗ xcbeautify(brew install xcbeautify)"
 
 # ビルド
+# -destination を明示して、複数候補警告を抑止する
 build:
     set -o pipefail && xcodebuild \
         -project {{xcodeproj}} \
         -scheme {{scheme}} \
         -configuration {{configuration}} \
+        -destination "platform=macOS,arch=arm64" \
         -derivedDataPath {{derived_data}} \
         build | xcbeautify
 
-# ビルドして起動
+# ビルドして起動(通常起動。stdout は捨てられる)
 run: build
     open {{app_path}}
+
+# 前景実行(ターミナルに stdout が流れるので print() の確認に使う)
+# Ctrl+C で停止。メニューバーの Cmd+Q でも停止。
+run-fg: build
+    {{app_path}}/Contents/MacOS/{{project}}
 
 # 成果物の場所を表示
 where:
