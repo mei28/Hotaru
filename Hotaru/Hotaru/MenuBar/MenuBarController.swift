@@ -31,10 +31,15 @@ final class MenuBarController: NSObject {
 
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(
-            systemSymbolName: "sparkle",
+        // SF Symbols `sparkles`: 蛍の発光感を意識した複数粒のキラキラ。
+        // NSImage.isTemplate = true にしておくとメニューバー背景色に応じた
+        // 自動ティント(ライトで黒、ダークで白)が効く。
+        let image = NSImage(
+            systemSymbolName: "sparkles",
             accessibilityDescription: "Hotaru"
         )
+        image?.isTemplate = true
+        button.image = image
     }
 
     private func buildMenu() -> NSMenu {

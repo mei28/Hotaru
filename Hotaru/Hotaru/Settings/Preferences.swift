@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import ServiceManagement  // SMAppService: ログイン時起動の登録/解除
 
 // 設定値の永続化と、SwiftUI / OverlayController / MenuBarController への配信を担当。
 // UserDefaults の薄いラッパ + ObservableObject。
@@ -35,6 +36,18 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(Double(borderWidth), forKey: Key.borderWidth) }
     }
 
+    // ログイン時に Hotaru を自動起動するか。
+    // SMAppService.mainApp.register() / unregister() と UserDefaults を両方更新する。
+    // register に失敗した場合(未署名 + 権限無し等)はログだけ出し、状態は UI と乖離しない
+    // よう defaults へは書き込まない方針にしてもよいが、個人ユースでは乖離を許容して
+    // ユーザー操作の痕跡を保存する方を優先する。
+    @Published var launchAtLogin: Bool {
+        didSet {
+            defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
+            applyLaunchAtLogin()
+        }
+    }
+
     // MARK: - 既定値
 
     static let defaultColorLight = NSColor(
@@ -45,6 +58,7 @@ final class Preferences: ObservableObject {
     )
     static let defaultBorderWidth: CGFloat = 3
     static let defaultIsEnabled = true
+    static let defaultLaunchAtLogin = true
 
     // MARK: - UserDefaults キー(仕様書 §6.1 に準拠)
 
@@ -53,6 +67,7 @@ final class Preferences: ObservableObject {
         static let borderColorLight = "hotaru.borderColor.light"
         static let borderColorDark  = "hotaru.borderColor.dark"
         static let borderWidth      = "hotaru.borderWidth"
+        static let launchAtLogin    = "hotaru.launchAtLogin"
     }
 
     private let defaults = UserDefaults.standard
@@ -62,8 +77,9 @@ final class Preferences: ObservableObject {
         // set() で明示書き込みされるまで、こちらの値が読み出される。
         // NSColor は plist 互換ではないのでここに載せず、読み出し側で nil フォールバック。
         defaults.register(defaults: [
-            Key.isEnabled:   Self.defaultIsEnabled,
-            Key.borderWidth: Double(Self.defaultBorderWidth),
+            Key.isEnabled:     Self.defaultIsEnabled,
+            Key.borderWidth:   Double(Self.defaultBorderWidth),
+            Key.launchAtLogin: Self.defaultLaunchAtLogin,
         ])
 
         // 初期値のロード。@Published は init 中に自分を参照できないので、
@@ -76,6 +92,41 @@ final class Preferences: ObservableObject {
         self.borderColorDark  = Self.loadColor(from: defaults, forKey: Key.borderColorDark)
             ?? Self.defaultColorDark
         self.borderWidth = CGFloat(defaults.double(forKey: Key.borderWidth))
+        self.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
+
+        // 起動時点の UserDefaults の値と実際の登録状態を同期させる。
+        // ユーザーが前回登録したはずが、システム設定から手動で無効化した場合などに整合を取る。
+        syncLaunchAtLoginState()
+    }
+
+    // MARK: - Login item
+
+    // SMAppService に現在の希望状態(launchAtLogin)を反映する。
+    // 失敗は console にログするだけ。署名や Sandbox まわりで失敗することがあるが、
+    // 個人ユースのビルドで致命にはしない方針。
+    private func applyLaunchAtLogin() {
+        do {
+            if launchAtLogin {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            NSLog("[Preferences] SMAppService \(launchAtLogin ? "register" : "unregister") failed: \(error)")
+        }
+    }
+
+    // 実際のシステム状態と UserDefaults の値がずれている場合、
+    // UserDefaults 側を真と見なして SMAppService を合わせる。
+    private func syncLaunchAtLoginState() {
+        let current: Bool
+        switch SMAppService.mainApp.status {
+        case .enabled: current = true
+        default:       current = false
+        }
+        if current != launchAtLogin {
+            applyLaunchAtLogin()
+        }
     }
 
     // MARK: - 操作
@@ -85,6 +136,7 @@ final class Preferences: ObservableObject {
         borderColorLight = Self.defaultColorLight
         borderColorDark  = Self.defaultColorDark
         borderWidth = Self.defaultBorderWidth
+        launchAtLogin = Self.defaultLaunchAtLogin
     }
 
     // MARK: - NSColor の永続化

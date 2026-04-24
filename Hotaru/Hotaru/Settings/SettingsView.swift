@@ -16,6 +16,7 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("Hotaru を有効にする", isOn: $preferences.isEnabled)
+                Toggle("ログイン時に起動する", isOn: $preferences.launchAtLogin)
             }
 
             Section("ボーダー") {

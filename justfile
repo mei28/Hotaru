@@ -8,6 +8,7 @@ derived_data  := "./build"
 # Xcode プロジェクトは Hotaru/ サブフォルダに入れ子
 xcodeproj     := "Hotaru/Hotaru.xcodeproj"
 app_path      := derived_data / "Build/Products" / configuration / (project + ".app")
+subsystem     := "com.waddlier.Hotaru"
 
 # デフォルト: レシピ一覧
 default:
@@ -54,6 +55,10 @@ run: build
 # Ctrl+C で停止。メニューバーの Cmd+Q でも停止。
 run-fg: build
     {{app_path}}/Contents/MacOS/{{project}}
+
+# os.Logger の出力を Console に流す(os_log / Logger で書いたものをリアルタイム表示)
+log:
+    log stream --predicate 'subsystem == "{{subsystem}}"' --level debug
 
 # 成果物の場所を表示
 where:

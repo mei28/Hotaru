@@ -29,11 +29,18 @@ final class OverlayWindow: NSWindow {
         // .statusBar はメニューバー用の高レベルで、ほとんどのアプリのウィンドウより前に出る。
         level = .statusBar
 
-        // collectionBehavior: 全 Space / フルスクリーンでの挙動を調整。
-        //   .canJoinAllSpaces     全ての Space に出現 (Space を切り替えても追従表示)
-        //   .fullScreenAuxiliary  フルスクリーンアプリの上にも出せる
-        //   .stationary           Mission Control でズームしても動かない
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        // collectionBehavior: Space / Mission Control / フルスクリーンでの挙動を調整。
+        //
+        // 要件:
+        //   - フルスクリーンアプリでは表示したくない → .fullScreenAuxiliary を外す
+        //   - Mission Control / Exposé / App Exposé では残って欲しくない → .transient
+        //   - 他 Space に切り替えたときは自動で追従してほしい → .moveToActiveSpace
+        //
+        //   .moveToActiveSpace : orderFront のたびにアクティブ Space に移る
+        //   .transient         : Exposé / Mission Control / Dock 上のウィンドウサムネ列から消える
+        //   .stationary        : Mission Control でスケールアニメに巻き込まれない
+        //                        (.transient で非表示になるが念のため付けておく)
+        collectionBehavior = [.moveToActiveSpace, .transient, .stationary]
 
         // 実際にボーダーを描くのは OverlayView 側。
         // NSWindow の contentView に差し替える。

@@ -1,9 +1,16 @@
 import AppKit
+import os.log
 
 // フロントアプリ(最前面でアクティブなアプリ)を追跡するクラス。
 // NSWorkspace の通知を購読して、切り替わりを検知する。
 // Phase 3 時点ではログ出力のみ。Phase 4 以降で、ここから AX API を使って
 // アクティブウィンドウの座標を取得する処理に拡張する。
+// os.Logger は Unified Logging System への薄いラッパ。
+// - subsystem と category で絞り込み可能
+// - Console.app / `log stream --predicate ...` で確認できる
+// - リリースでも残したい記録は .info、開発中のみ見たいものは .debug にする
+private let log = Logger(subsystem: "com.waddlier.Hotaru", category: "focus")
+
 final class FocusTracker: NSObject {
 
     // フォーカスが変わるたびに呼ばれるコールバック。
@@ -82,21 +89,19 @@ final class FocusTracker: NSObject {
         let name = app.localizedName ?? "(unnamed)"
         let bundleID = app.bundleIdentifier ?? "(no bundle id)"
         let pid = app.processIdentifier
-        print("[FocusTracker \(reason)] \(name) — \(bundleID) — pid=\(pid)")
+        log.debug("\(reason, privacy: .public) app=\(name, privacy: .public) bundle=\(bundleID, privacy: .public) pid=\(pid)")
     }
 
     // handleActivation で既に取得済みの WindowInfo を受け取ってログ化するだけに変えた。
     // Electron 系アプリ(Slack / Dia など)は AX ツリーが貧弱で nil が返ることがある。
     private func logFocusedWindow(_ info: WindowInfo?) {
         guard let info = info else {
-            print("  └ no focused window (AX 未許可 / 対象アプリが応答なし / ウィンドウ無し)")
+            log.debug("no focused window (AX 未許可 / 対象アプリが応答なし / ウィンドウ無し)")
             return
         }
-        let axFrame = info.frame
-        let cocoaFrame = ScreenGeometry.convertAXToCocoa(axFrame)
-        print(String(format: "  └ AX    origin=(%.0f, %.0f)  size=(%.0f × %.0f)",
-                     axFrame.origin.x, axFrame.origin.y, axFrame.size.width, axFrame.size.height))
-        print(String(format: "  └ Cocoa origin=(%.0f, %.0f)  size=(%.0f × %.0f)",
-                     cocoaFrame.origin.x, cocoaFrame.origin.y, cocoaFrame.size.width, cocoaFrame.size.height))
+        let ax = info.frame
+        let cocoa = ScreenGeometry.convertAXToCocoa(ax)
+        log.debug("AX    origin=(\(ax.origin.x), \(ax.origin.y)) size=(\(ax.size.width)×\(ax.size.height))")
+        log.debug("Cocoa origin=(\(cocoa.origin.x), \(cocoa.origin.y)) size=(\(cocoa.size.width)×\(cocoa.size.height))")
     }
 }
