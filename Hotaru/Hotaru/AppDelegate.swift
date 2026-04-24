@@ -21,5 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // NSApp が既に初期化済みで、UI を組み立てるのに安全な最初のポイント。
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBarController = MenuBarController()
+
+        // Phase 2: AX 権限をチェックし、なければ誘導アラートを出す。
+        // 権限がある場合は何もしないので毎回呼んで OK。
+        AccessibilityChecker.requestAccessIfNeeded()
     }
 }
