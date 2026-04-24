@@ -1,40 +1,36 @@
 import AppKit
+import Combine
 
 // メニューバーアイコンとプルダウンメニューを管理するクラス。
-// Phase 1 時点では "Hotaru を終了" メニュー 1 つの最小構成。
-// 以降のフェーズで有効化トグル・設定・About などを追加していく。
+// Phase 7: 設定項目の "Hotaru 有効" "設定…" "About" "終了" を揃え、
+// Preferences の変化に応じて有効トグル項目の見出しを更新する。
 final class MenuBarController: NSObject {
 
-    // NSStatusItem: メニューバー右側の 1 マス分の "枠"。
-    // NSStatusBar.system.statusItem(...) で払い出してもらい、強参照で保持する。
-    // (保持しないと ARC で消える → メニューバーからアイコンが消える)
     private let statusItem: NSStatusItem
+    private let preferences: Preferences
 
-    override init() {
-        // variableLength はコンテンツ(アイコンやテキスト)の幅に合わせて自動伸縮する指定。
-        // 固定幅にする場合は数値を渡すが、アイコンのみの場合は variableLength が標準。
+    // 動的に文面を書き換える項目への参照(checkmark を使う代わりに title 切替方式を採用)
+    private var enableMenuItem: NSMenuItem?
+
+    // Combine の購読トークン置き場(OverlayController と同じイディオム)
+    private var cancellables = Set<AnyCancellable>()
+
+    init(preferences: Preferences) {
+        self.preferences = preferences
         self.statusItem = NSStatusBar.system.statusItem(
             withLength: NSStatusItem.variableLength
         )
-        // NSObject の init を呼ぶ Swift の規則。
-        // 親クラスの初期化を必ず最初に済ませないと、以降で self を参照できない。
         super.init()
 
         configureStatusItem()
         statusItem.menu = buildMenu()
+        subscribeToPreferences()
     }
 
     // MARK: - Setup
 
     private func configureStatusItem() {
-        // statusItem.button は理論上 Optional(macOS 10.12 以降では常に存在するが
-        // 型としては NSStatusBarButton?)。guard let で早期脱出するのが Swift の定番。
-        // Rust 1.65+ の `let ... else` と同じ構文感覚。
         guard let button = statusItem.button else { return }
-
-        // SF Symbols からアイコンを生成。
-        // accessibilityDescription は VoiceOver 用の代替テキスト。
-        // "sparkle" は仮アイコン(仕様書の候補)。後で蛍らしい SF Symbol に差し替え可。
         button.image = NSImage(
             systemSymbolName: "sparkle",
             accessibilityDescription: "Hotaru"
@@ -44,30 +40,88 @@ final class MenuBarController: NSObject {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        // NSMenuItem(title:action:keyEquivalent:) の標準コンストラクタ。
-        // action に渡す #selector(メソッド名) は "そのメソッドを指す識別子" で、
-        // AppKit が Obj-C ランタイム経由で呼び出す。メソッド側に @objc が必要。
-        let quit = NSMenuItem(
+        // 1. 有効/無効トグル
+        let enable = makeItem(
+            title: toggleTitle(for: preferences.isEnabled),
+            action: #selector(toggleEnabled(_:)),
+            key: ""
+        )
+        menu.addItem(enable)
+        self.enableMenuItem = enable
+
+        menu.addItem(.separator())
+
+        // 2. 設定…(Cmd+,)
+        menu.addItem(makeItem(
+            title: "設定…",
+            action: #selector(openSettings(_:)),
+            key: ","
+        ))
+
+        menu.addItem(.separator())
+
+        // 3. About
+        menu.addItem(makeItem(
+            title: "Hotaru について…",
+            action: #selector(openAbout(_:)),
+            key: ""
+        ))
+
+        // 4. Quit
+        menu.addItem(makeItem(
             title: "Hotaru を終了",
             action: #selector(quitApp(_:)),
-            keyEquivalent: "q"  // Cmd+Q で呼べる
-        )
-        // target を明示しないと responder chain を辿って解決される。
-        // 自分のメソッドを直接呼びたいので self に固定しておく。
-        quit.target = self
-        menu.addItem(quit)
+            key: "q"
+        ))
 
         return menu
     }
 
+    // NSMenuItem 生成のヘルパ。target = self を必ずセット。
+    private func makeItem(title: String, action: Selector, key: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = self
+        return item
+    }
+
+    private func toggleTitle(for isEnabled: Bool) -> String {
+        isEnabled ? "Hotaru を無効にする" : "Hotaru を有効にする"
+    }
+
+    // MARK: - Subscriptions
+
+    private func subscribeToPreferences() {
+        // isEnabled の変化にあわせて、メニュー項目の見出しを書き換える。
+        // objectWillChange は "これから変わる" なので、RunLoop.main で 1 tick ずらして
+        // 新しい値を読む(= 変更後のタイミングに合わせる)。
+        preferences.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.enableMenuItem?.title = self.toggleTitle(for: self.preferences.isEnabled)
+            }
+            .store(in: &cancellables)
+    }
+
     // MARK: - Actions
 
-    // @objc は Obj-C ランタイムに公開する属性。
-    // 上の #selector(quitApp(_:)) で参照するために必須。
-    // Swift ネイティブのメソッドのままだと、AppKit から動的に呼び出せない。
-    //
-    // 引数 sender は「誰がこの action を発火したか」を渡す AppKit の慣習。
-    // Any? にしておけば、将来メニュー項目以外(ボタン等)からも同じハンドラを使える。
+    @objc private func toggleEnabled(_ sender: Any?) {
+        preferences.isEnabled.toggle()
+    }
+
+    @objc private func openSettings(_ sender: Any?) {
+        // SwiftUI の Settings シーン + showSettingsWindow: セレクタの経路は
+        // LSUIElement アプリで安定しないため、自前の SettingsWindowController を使う。
+        SettingsWindowController.shared.show()
+    }
+
+    @objc private func openAbout(_ sender: Any?) {
+        NSApp.activate()
+        // About パネルは AppKit が持っている標準ダイアログ。
+        // 特定の受信者を指定しなくても、NSApp が直接ハンドルする。
+        NSApp.orderFrontStandardAboutPanel(sender)
+    }
+
     @objc private func quitApp(_ sender: Any?) {
         NSApplication.shared.terminate(sender)
     }

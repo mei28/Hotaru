@@ -31,15 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // アプリ起動が完了したタイミングで呼ばれる。
     // NSApp が既に初期化済みで、UI を組み立てるのに安全な最初のポイント。
     func applicationDidFinishLaunching(_ notification: Notification) {
-        menuBarController = MenuBarController()
+        let preferences = Preferences.shared
+
+        menuBarController = MenuBarController(preferences: preferences)
 
         // Phase 2: AX 権限をチェックし、なければ誘導アラートを出す。
         // 権限がある場合は何もしないので毎回呼んで OK。
         AccessibilityChecker.requestAccessIfNeeded()
 
-        // Phase 5: オーバーレイウィンドウを先に生成してから、
-        // FocusTracker → OverlayController のコールバック配線を組む。
-        let overlay = OverlayController()
+        // Phase 5+7: オーバーレイを Preferences で配線して生成。
+        // 色・幅・有効無効・ダークモード切替の追従は OverlayController 内部で行う。
+        let overlay = OverlayController(preferences: preferences)
         overlayController = overlay
 
         // Phase 3+4+5+6: アプリ切替でオーバーレイ即時更新 + そのアプリ用 AX 観測器を張り替え。

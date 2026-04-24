@@ -10,14 +10,15 @@ struct HotaruApp: App {
     // SwiftUI の世界(struct ベース)と AppKit のライフサイクル(class + delegate)を橋渡しする糊。
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    // App プロトコルは body: some Scene を要求する。
-    // メニューバー常駐アプリはウィンドウが要らないので、Settings {} だけを宣言する。
-    // WindowGroup を置くと起動時に空ウィンドウが出てしまうので、ここでは置かない。
-    // Settings {} は "アプリメニュー > 設定…" から開くウィンドウの定義。
-    // Phase 7 で中身を実装するまでは EmptyView のまま。
     var body: some Scene {
+        // Settings シーン: アプリメニューや独自メニューから開かれる設定ウィンドウ。
+        // SwiftUI 側でこのシーンを宣言しておくと、AppKit 側から
+        //   NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        // で開けるようになる(Phase 7 で MenuBarController が使う)。
+        //
+        // Preferences.shared を渡すことで、アプリ全体で同じ設定インスタンスを共有する。
         Settings {
-            EmptyView()
+            SettingsView(preferences: Preferences.shared)
         }
     }
 }
