@@ -1,22 +1,25 @@
 import SwiftUI
 
-// @main: Swift のエントリポイント指定。
-// 「App プロトコルに準拠した型」を @main で飾ると、この型の body が起動時に評価される。
-// fn main() の代わりに型ベースで宣言する流儀、と見ればよい。
+// @main marks the Swift entry point.
+// Decorating a type that conforms to the App protocol makes its `body` evaluated
+// at launch. Instead of a free `fn main()`, Swift uses a type-based declaration.
 @main
 struct HotaruApp: App {
-    // @NSApplicationDelegateAdaptor は property wrapper で、
-    // 裏で AppDelegate を生成し NSApplication.shared.delegate にセットしてくれる。
-    // SwiftUI の世界(struct ベース)と AppKit のライフサイクル(class + delegate)を橋渡しする糊。
+    // @NSApplicationDelegateAdaptor is a property wrapper that constructs an
+    // AppDelegate behind the scenes and assigns it to NSApplication.shared.delegate.
+    // It is the glue that bridges the SwiftUI world (struct-based) to the AppKit
+    // lifecycle (class + delegate callbacks).
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        // Settings シーン: アプリメニューや独自メニューから開かれる設定ウィンドウ。
-        // SwiftUI 側でこのシーンを宣言しておくと、AppKit 側から
+        // Settings scene: a window that is opened from the app menu or our own menu.
+        // Declaring it on the SwiftUI side lets AppKit code open it via
         //   NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        // で開けるようになる(Phase 7 で MenuBarController が使う)。
+        // (MenuBarController still opens its own NSWindow directly because that
+        // selector is unreliable for LSUIElement apps — see SettingsWindowController).
         //
-        // Preferences.shared を渡すことで、アプリ全体で同じ設定インスタンスを共有する。
+        // Preferences.shared is passed so the whole app shares a single settings
+        // instance.
         Settings {
             SettingsView(preferences: Preferences.shared)
         }

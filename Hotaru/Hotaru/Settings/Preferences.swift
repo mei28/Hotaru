@@ -1,24 +1,27 @@
 import AppKit
 import Combine
-import ServiceManagement  // SMAppService: ログイン時起動の登録/解除
+import ServiceManagement  // SMAppService: registers/unregisters the app as a login item
 
-// 設定値の永続化と、SwiftUI / OverlayController / MenuBarController への配信を担当。
-// UserDefaults の薄いラッパ + ObservableObject。
+// Persists settings and publishes changes to SwiftUI, OverlayController, and
+// MenuBarController. A thin UserDefaults wrapper that also conforms to
+// ObservableObject.
 //
-// なぜシングルトンか:
-//   - 設定はアプリ全体でひとつ
-//   - AppDelegate 経由で受け渡す配線コストを削る
-// 設計として過度に strict にしたければ依存注入もできるが、個人ユースなので shared で割り切る。
+// Why a singleton?
+//   - There is only one settings object for the whole app.
+//   - Skipping dependency injection through AppDelegate keeps wiring trivial.
+// Dependency injection would be cleaner in strict codebases; for a personal
+// app the `.shared` tradeoff is fine.
 //
-// @Published は SwiftUI の @ObservedObject が監視するための propertyWrapper。
-// 値が変わると objectWillChange を発火し、View が自動で再描画される。
-// didSet は Swift のプロパティオブザーバ: @Published の通知 → didSet の順で走る。
-// ここで UserDefaults に保存することで、値の変更と永続化が 1 箇所に閉じる。
+// @Published is the property wrapper that SwiftUI's @ObservedObject listens
+// to. When the value changes, objectWillChange fires and views re-render.
+// didSet is Swift's property observer that runs right after @Published's
+// change notification. Saving to UserDefaults here keeps the "change the
+// value and persist it" logic in one place.
 final class Preferences: ObservableObject {
 
     static let shared = Preferences()
 
-    // MARK: - Published 値(SwiftUI バインディング可能)
+    // MARK: - Published properties (SwiftUI bindings)
 
     @Published var isEnabled: Bool {
         didSet { defaults.set(isEnabled, forKey: Key.isEnabled) }
@@ -36,11 +39,12 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(Double(borderWidth), forKey: Key.borderWidth) }
     }
 
-    // ログイン時に Hotaru を自動起動するか。
-    // SMAppService.mainApp.register() / unregister() と UserDefaults を両方更新する。
-    // register に失敗した場合(未署名 + 権限無し等)はログだけ出し、状態は UI と乖離しない
-    // よう defaults へは書き込まない方針にしてもよいが、個人ユースでは乖離を許容して
-    // ユーザー操作の痕跡を保存する方を優先する。
+    // Whether Hotaru launches at login.
+    // Updates both SMAppService.mainApp and UserDefaults.
+    // If registration fails (unsigned build + missing permission etc.) we only
+    // log the error. We could avoid writing to defaults to keep UI and actual
+    // state in lockstep, but for a personal-use build it is friendlier to
+    // remember the user's intent.
     @Published var launchAtLogin: Bool {
         didSet {
             defaults.set(launchAtLogin, forKey: Key.launchAtLogin)
@@ -48,7 +52,7 @@ final class Preferences: ObservableObject {
         }
     }
 
-    // MARK: - 既定値
+    // MARK: - Defaults
 
     static let defaultColorLight = NSColor(
         srgbRed: 1.0, green: 184.0 / 255.0, blue: 77.0 / 255.0, alpha: 1.0
@@ -60,7 +64,7 @@ final class Preferences: ObservableObject {
     static let defaultIsEnabled = true
     static let defaultLaunchAtLogin = true
 
-    // MARK: - UserDefaults キー(仕様書 §6.1 に準拠)
+    // MARK: - UserDefaults keys (matches SPEC §6.1)
 
     private enum Key {
         static let isEnabled        = "hotaru.isEnabled"
@@ -73,19 +77,21 @@ final class Preferences: ObservableObject {
     private let defaults = UserDefaults.standard
 
     private init() {
-        // register(defaults:) は「ユーザー未設定時の既定値」を登録する。
-        // set() で明示書き込みされるまで、こちらの値が読み出される。
-        // NSColor は plist 互換ではないのでここに載せず、読み出し側で nil フォールバック。
+        // register(defaults:) registers fallback values that are returned
+        // until the user writes an explicit value via set().
+        // NSColor is not plist-compatible, so we don't register a default for
+        // it here — the loader falls back to a hardcoded default instead.
         defaults.register(defaults: [
             Key.isEnabled:     Self.defaultIsEnabled,
             Key.borderWidth:   Double(Self.defaultBorderWidth),
             Key.launchAtLogin: Self.defaultLaunchAtLogin,
         ])
 
-        // 初期値のロード。@Published は init 中に自分を参照できないので、
-        // ローカル変数で読み、プロパティにはまとめて代入する。
-        // (didSet は init 中でも走るため、読み戻した値で UserDefaults.set が呼ばれるが、
-        //  同じ値の書き込みなので副作用は実質なし)
+        // Load initial values.
+        // @Published properties cannot refer to self during init, so we read
+        // into local values first and assign them in one shot.
+        // (didSet still fires during init and writes back to UserDefaults,
+        //  but writing the same value is a no-op in practice.)
         self.isEnabled = defaults.bool(forKey: Key.isEnabled)
         self.borderColorLight = Self.loadColor(from: defaults, forKey: Key.borderColorLight)
             ?? Self.defaultColorLight
@@ -94,16 +100,18 @@ final class Preferences: ObservableObject {
         self.borderWidth = CGFloat(defaults.double(forKey: Key.borderWidth))
         self.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
 
-        // 起動時点の UserDefaults の値と実際の登録状態を同期させる。
-        // ユーザーが前回登録したはずが、システム設定から手動で無効化した場合などに整合を取る。
+        // Reconcile UserDefaults with the actual registration state, in case
+        // the user enabled launch-at-login previously but later disabled it
+        // via System Settings manually.
         syncLaunchAtLoginState()
     }
 
     // MARK: - Login item
 
-    // SMAppService に現在の希望状態(launchAtLogin)を反映する。
-    // 失敗は console にログするだけ。署名や Sandbox まわりで失敗することがあるが、
-    // 個人ユースのビルドで致命にはしない方針。
+    // Reflect the desired launchAtLogin value into SMAppService.
+    // Failures just go to the console — signing / sandbox issues can make
+    // register() throw, but for a personal-use build we do not treat those
+    // as fatal.
     private func applyLaunchAtLogin() {
         do {
             if launchAtLogin {
@@ -116,8 +124,8 @@ final class Preferences: ObservableObject {
         }
     }
 
-    // 実際のシステム状態と UserDefaults の値がずれている場合、
-    // UserDefaults 側を真と見なして SMAppService を合わせる。
+    // If UserDefaults and the actual SMAppService status disagree, take
+    // UserDefaults as the source of truth and realign the service.
     private func syncLaunchAtLoginState() {
         let current: Bool
         switch SMAppService.mainApp.status {
@@ -129,7 +137,7 @@ final class Preferences: ObservableObject {
         }
     }
 
-    // MARK: - 操作
+    // MARK: - Actions
 
     func resetToDefaults() {
         isEnabled = Self.defaultIsEnabled
@@ -139,16 +147,18 @@ final class Preferences: ObservableObject {
         launchAtLogin = Self.defaultLaunchAtLogin
     }
 
-    // MARK: - NSColor の永続化
+    // MARK: - NSColor persistence
 
-    // NSColor は plist 互換型ではないため、そのままでは UserDefaults に入らない。
-    // 選択肢:
-    //   (A) NSKeyedArchiver で Data 化 — バイナリだが色空間や型の将来互換が怖い
-    //   (B) sRGB の R/G/B/A を Double 辞書で保存 — 人間可読、デバッグしやすい
-    // 仕様書 §6.1 の推奨に従い (B) を採用。
+    // NSColor is not a plist-compatible type, so it cannot be stored in
+    // UserDefaults as-is.
+    //   (A) NSKeyedArchiver -> Data: compact but binary; worried about color
+    //       space and type evolution.
+    //   (B) Dictionary of sRGB R/G/B/A Doubles: human-readable, easy to debug.
+    // SPEC §6.1 recommends (B), so we use that.
     private func save(color: NSColor, forKey key: String) {
-        // ColorPicker が返してくる NSColor は任意の色空間(Generic RGB, Device RGB 等)を
-        // 持ちうるので、読み書きで変形しないよう sRGB に正規化してから分解する。
+        // The NSColor coming out of ColorPicker can be in any color space
+        // (Generic RGB, Device RGB, ...). Normalize to sRGB before
+        // decomposing so the round-trip is stable.
         guard let rgb = color.usingColorSpace(.sRGB) else {
             return
         }

@@ -1,24 +1,26 @@
 import ApplicationServices
 import CoreGraphics
 
-// Accessibility API を使って、指定 pid のアクティブウィンドウの位置・サイズを取得する。
-// Phase 4 の中心。この先 Phase 6 で AXObserver(移動・リサイズの通知購読)に拡張していく。
+// Uses the Accessibility API to retrieve the focused window's position and
+// size for a given pid. The heart of Phase 4; Phase 6 extends it with
+// AXObserver notifications (move/resize subscription).
 //
-// AX API は Objective-C のランタイム層ではなく、更に下位の C 層(Core Foundation)。
-// したがって Swift からは:
-//   - CFTypeRef / AXValue / AXUIElement といった CF 型が直接出てくる
-//   - out パラメータは UnsafeMutablePointer<...> を要求する(Swift では `&var` で inout 渡し)
-//   - エラーは AXError 列挙体で返ってくる
-// といった "C っぽさ" が残る。Rust で言うと FFI 越しに C 構造体を触る感覚。
+// The AX API lives below the Objective-C runtime, at the Core Foundation C
+// layer. In Swift this leaks through as:
+//   - CF types (CFTypeRef / AXValue / AXUIElement) appear directly
+//   - out parameters demand UnsafeMutablePointer<...> (Swift accepts `&var` via inout)
+//   - errors surface as the AXError enum
+// In other words, it retains a "C-ish" flavor — similar to touching a C struct
+// through an FFI boundary in Rust.
 enum AXWindowQuery {
 
-    // 指定 pid のアクティブアプリのフォーカスウィンドウ情報を AX 座標系で返す。
-    // 失敗要因(すべて nil 返し):
-    //   - AX 権限がない
-    //   - アプリが応答しない / ウィンドウが無い
-    //   - Electron アプリなど AX ツリーが貧弱でフォーカスウィンドウが取れない
+    // Return the focused-window info (in AX coordinates) for the active app.
+    // Returns nil in any of the following cases:
+    //   - AX permission is not granted
+    //   - The app is unresponsive or has no window
+    //   - Apps with a thin AX tree (Electron) that do not expose a focused window
     static func focusedWindowInfo(pid: pid_t) -> WindowInfo? {
-        // pid からアプリのルート AX 要素を作る。戻り値は AXUIElement 型(CF 型)。
+        // Build the app's root AX element from the pid. Returns an AXUIElement (CF type).
         let appElement = AXUIElementCreateApplication(pid)
         guard let windowElement = focusedWindowElement(for: appElement) else {
             return nil
@@ -26,15 +28,15 @@ enum AXWindowQuery {
         return windowInfo(from: windowElement)
     }
 
-    // アプリ要素からフォーカスウィンドウの AXUIElement を取得。
-    // Phase 6 の WindowObserver が、アプリレベルで kAXFocusedWindowChangedNotification を
-    // 受けた後に新しい focused window element を取り直すのに使う。
+    // Fetch the focused window's AXUIElement from an app element.
+    // The Phase 6 WindowObserver uses this to re-fetch the element after
+    // receiving a kAXFocusedWindowChangedNotification at the app level.
     static func focusedWindowElement(for appElement: AXUIElement) -> AXUIElement? {
         copyElement(from: appElement, attribute: kAXFocusedWindowAttribute)
     }
 
-    // ウィンドウ要素から現在の位置・サイズを取り出して WindowInfo にする。
-    // 移動・リサイズ通知を受けたあとで「今のフレーム」を読み直す用途。
+    // Read the current position and size from a window element and return a
+    // WindowInfo. Used to re-read the frame after a move/resize notification.
     static func windowInfo(from windowElement: AXUIElement) -> WindowInfo? {
         var position = CGPoint.zero
         var size = CGSize.zero
@@ -56,40 +58,44 @@ enum AXWindowQuery {
         return WindowInfo(position: position, size: size)
     }
 
-    // MARK: - 低レベル AX 呼び出しラッパ
+    // MARK: - Low-level AX wrappers
 
-    // AX 属性が AXUIElement(ウィンドウ、ボタン等の "参照" 型)を返す場合のラッパ。
+    // Wrapper for attributes that return an AXUIElement (a reference type such
+    // as a window or a button).
     //
-    // AXUIElementCopyAttributeValue は C 関数で、out パラメータとして
-    // UnsafeMutablePointer<CFTypeRef?> を受け取る。
-    // Swift では「Optional な var に `&` を付ければ inout ポインタになる」という糖衣があり、
-    // CFTypeRef? 型の変数を宣言して `&value` と渡せば自動的にブリッジされる。
+    // AXUIElementCopyAttributeValue is a C function whose out parameter is an
+    // UnsafeMutablePointer<CFTypeRef?>. Swift lets us declare a CFTypeRef?
+    // variable and pass `&value`; the `&` sugar produces the inout pointer
+    // that the C function expects.
     private static func copyElement(from element: AXUIElement, attribute: String) -> AXUIElement? {
-        var rawValue: CFTypeRef?  // CFTypeRef = AnyObject、あらゆる CF 型の共通親
+        var rawValue: CFTypeRef?  // CFTypeRef = AnyObject, the common root of all CF types
         let err = AXUIElementCopyAttributeValue(element, attribute as CFString, &rawValue)
 
-        // err は AXError(enum)。.success 以外はすべて失敗扱い。
-        // よくあるエラー:
-        //   .apiDisabled ... AX 機能が OS 側で無効
-        //   .cannotComplete ... 権限不足、対象プロセス応答なし
-        //   .attributeUnsupported ... その要素がこの属性を持たない
-        //   .noValue ... 値が未設定
+        // err is AXError (an enum). Anything other than .success is a failure.
+        // Common errors:
+        //   .apiDisabled           : AX is disabled at the OS level
+        //   .cannotComplete        : permission missing, or target process unresponsive
+        //   .attributeUnsupported  : this element does not have that attribute
+        //   .noValue               : the attribute exists but has no value
         guard err == .success, let value = rawValue else { return nil }
 
-        // 属性名から型が確定しているので force cast で AXUIElement に落とす。
-        // as! は失敗時 crash。推測でなく型が確実な場面のみ使う。
+        // The attribute name fixes the concrete type, so a force cast to
+        // AXUIElement is safe. `as!` crashes on mismatch — only use it when
+        // the type is guaranteed.
         return (value as! AXUIElement)
     }
 
-    // AX 属性が AXValue ラップ(CGPoint / CGSize / CGRect / CFRange など)の場合のラッパ。
+    // Wrapper for attributes wrapped in AXValue (CGPoint / CGSize / CGRect /
+    // CFRange, ...).
     //
-    // ジェネリクス + inout の組み合わせ:
-    //   - T は呼び出し側が持っている受け皿の型
-    //   - AXValueGetValue は C 関数で、書き込み先のポインタを要求する
-    //   - inout result の `&result` でポインタ化して渡す
+    // Generic + inout combo:
+    //   - T is the destination type chosen by the caller
+    //   - AXValueGetValue is a C function wanting a pointer to write into
+    //   - `&result` turns the inout parameter into that pointer
     //
-    // この関数は成功/失敗を Bool で返し、値は inout 先に直接書き込む。
-    // Rust だと fn f(out: &mut T) -> bool のイメージ。
+    // The function returns Bool for success/failure and writes the value
+    // through the inout parameter. The Rust equivalent would be
+    // `fn f(out: &mut T) -> bool`.
     private static func copyAXValueInto<T>(
         _ result: inout T,
         from element: AXUIElement,
@@ -100,13 +106,14 @@ enum AXWindowQuery {
         let err = AXUIElementCopyAttributeValue(element, attribute as CFString, &rawValue)
         guard err == .success, let value = rawValue else { return false }
 
-        // 中身は AXValue(CGPoint/CGSize などの "不透明コンテナ")。
-        // AXValueGetValue で `valueType` に合う形で書き出させる。
-        // valueType と T の組み合わせがミスマッチでも AXValueGetValue が false を返して済む。
+        // The payload is an AXValue (an opaque container for CGPoint/CGSize etc.).
+        // AXValueGetValue writes the contents into the buffer we pass, matching
+        // `valueType`. A mismatched (valueType, T) pair just yields false.
         //
-        // `&result` を直接渡すと UnsafeMutableRawPointer に暗黙変換されるが、T が参照型だった
-        // 場合の誤解釈を避けるため withUnsafeMutablePointer で明示的に型付きポインタを作り、
-        // そこから Raw ポインタに落とす。
+        // Passing `&result` directly would implicitly convert to
+        // UnsafeMutableRawPointer, but the compiler warns when T might be a
+        // reference type. Using withUnsafeMutablePointer explicitly produces a
+        // typed pointer, which we then lower to a raw pointer deliberately.
         let axValue = value as! AXValue
         return withUnsafeMutablePointer(to: &result) { ptr in
             AXValueGetValue(axValue, valueType, UnsafeMutableRawPointer(ptr))

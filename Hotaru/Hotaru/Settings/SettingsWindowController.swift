@@ -1,50 +1,53 @@
 import AppKit
 import SwiftUI
 
-// 設定ウィンドウ専用の NSWindowController。
+// Dedicated NSWindowController for the settings window.
 //
-// なぜ SwiftUI の `Settings { }` シーン頼みをやめたか:
-//   - LSUIElement アプリ(Dock アイコン無し)では main menu が空に近く、
-//     `NSApp.sendAction(Selector(("showSettingsWindow:")), ...)` の responder chain
-//     に Settings シーンのハンドラが届かないケースがある
-//   - その結果、メニューバーから「設定…」を叩いてもウィンドウが出てこない
-// → AppKit の世界で NSWindow を自分で作り、SwiftUI ビューを NSHostingController
-//   で埋め込む形にする。こちらの方が挙動が決定論的。
+// Why not rely on SwiftUI's `Settings { }` scene?
+//   - LSUIElement apps (no Dock icon) have a nearly-empty main menu, so
+//     `NSApp.sendAction(Selector(("showSettingsWindow:")), ...)` does not
+//     always reach the Settings-scene handler through the responder chain.
+//   - As a result, clicking "Settings…" in the menu bar sometimes does nothing.
+// -> Construct an NSWindow ourselves in AppKit and embed the SwiftUI view
+//    via NSHostingController. This gives deterministic behavior.
 //
 // NSHostingController<Content: View>:
-//   - SwiftUI ビュー階層を AppKit の NSViewController としてラップする橋渡し
-//   - 中身の SwiftUI は通常通り @ObservedObject で Preferences を監視するので、
-//     Preferences.shared を渡すだけでそれ以降の変更は自動で再描画される
+//   - Bridges a SwiftUI view hierarchy into an AppKit NSViewController.
+//   - The SwiftUI side keeps observing Preferences via @ObservedObject as
+//     usual, so passing Preferences.shared in is enough to have live updates.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
-    // シングルトン: 設定ウィンドウは 1 つだけあれば十分。
-    // Swift の static let は初回アクセス時に thread-safe に生成される(Swift 言語保証)。
+    // Singleton — one settings window is enough for the whole app.
+    // Swift guarantees that `static let` is constructed lazily and thread-safely
+    // on first access.
     static let shared = SettingsWindowController()
 
-    // init(window:) をカスタマイズするため designated init を private で作る。
-    // required init?(coder:) は NSWindowController のプロトコル要件だが、
-    // コード起動専用なので fatalError にしておく。
+    // We customize init(window:), so the designated init is private.
+    // required init?(coder:) is the NSWindowController contract, but the app
+    // never constructs this from a coder — trap with fatalError.
     private init() {
-        // SwiftUI ビューを NSViewController へラップ
+        // Wrap the SwiftUI view in an NSViewController.
         let rootView = SettingsView(preferences: .shared)
         let hosting = NSHostingController(rootView: rootView)
 
-        // ウィンドウは hosting のビューを自動でサイズに合わせる。
-        // contentViewController を渡す形にすると、タイトルバー付きの通常ウィンドウが
-        // 自動的に組み上がる(NSWindow の designated init を直接叩くより楽)。
+        // The window sizes itself to the hosting controller's view.
+        // Passing contentViewController builds a titled regular window
+        // automatically, which is simpler than calling NSWindow's designated
+        // init directly.
         let window = NSWindow(contentViewController: hosting)
         window.title = "Hotaru 設定"
         window.styleMask = [.titled, .closable]
 
-        // 重要: close したときにウィンドウを release しない。
-        // 既定の NSWindow は閉じると解放されるが、再度開けるよう生かしておく。
+        // Important: do NOT release the window when it closes.
+        // By default NSWindow is released on close; we keep it alive so the
+        // user can reopen the same window repeatedly.
         window.isReleasedWhenClosed = false
 
-        // 初回表示位置を画面中央に
+        // Center on first display.
         window.center()
 
         super.init(window: window)
-        // NSWindowDelegate になっておくと将来クローズ時のフックを挟める(今は未使用)
+        // Become the NSWindowDelegate so we can hook close behavior later if needed.
         window.delegate = self
     }
 
@@ -54,9 +57,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Public API
 
-    // メニューバーから呼ばれるエントリ。
-    // - LSUIElement なのでアプリを前面に出してからウィンドウを key にする
-    // - 既に開いていれば再 activate だけで前面に持って来られる
+    // Entry point used by the menu bar controller.
+    // - LSUIElement apps need to activate first so the window actually comes forward.
+    // - If the window is already open, activating again brings it to the front.
     func show() {
         NSApp.activate()
         guard let window = window else { return }

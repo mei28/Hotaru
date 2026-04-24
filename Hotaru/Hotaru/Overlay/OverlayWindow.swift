@@ -1,18 +1,20 @@
 import AppKit
 
-// ボーダー表示専用の透明 NSWindow。
-// 通常の NSWindow を「見えない土台」として使い、その上の OverlayView が
-// CALayer のボーダーで外周を描画する。
+// Transparent NSWindow dedicated to rendering the border.
+// It acts as an invisible canvas; the OverlayView on top strokes the border
+// via CALayer.
 //
-// 仕様書 §7.5 の設定をすべてここに集約する。
+// All the settings from SPEC §7.5 are consolidated here.
 final class OverlayWindow: NSWindow {
 
     init() {
-        // NSWindow の designated init。
-        // - contentRect: 最初のフレーム。起動直後は .zero でよい(後で setFrame で更新)
-        // - styleMask: .borderless = タイトルバー・枠・閉じるボタン等すべて無し
-        // - backing: .buffered = ダブルバッファ、モダン macOS では常にこれで OK
-        // - defer: false = すぐに裏側のウィンドウリソースを確保する
+        // NSWindow designated initializer.
+        // - contentRect: initial frame. `.zero` is fine at construction time;
+        //                we move the window later via setFrame.
+        // - styleMask: .borderless means no title bar, no close/zoom buttons.
+        // - backing: .buffered — double-buffered; always the right choice on
+        //            modern macOS.
+        // - defer: false — allocate the underlying window resources immediately.
         super.init(
             contentRect: .zero,
             styleMask: [.borderless],
@@ -20,35 +22,37 @@ final class OverlayWindow: NSWindow {
             defer: false
         )
 
-        isOpaque = false                // 背景を透過させる前提の設定
-        backgroundColor = .clear        // 背景色を完全透明に
-        hasShadow = false               // ウィンドウ影を消す(ボーダーが淡くならないように)
-        ignoresMouseEvents = true       // クリック・ホバーを下のウィンドウへ素通りさせる
+        isOpaque = false                // required for transparency
+        backgroundColor = .clear        // fully transparent background
+        hasShadow = false               // no window shadow (keeps the border crisp)
+        ignoresMouseEvents = true       // let clicks and hover pass through
 
-        // ウィンドウレベル: 通常ウィンドウの上、でもメニューバーよりは下。
-        // .statusBar はメニューバー用の高レベルで、ほとんどのアプリのウィンドウより前に出る。
+        // Window level: above regular app windows but below menu-bar items.
+        // .statusBar is the high level used by menu bar apps, which sits above
+        // almost every app window.
         level = .statusBar
 
-        // collectionBehavior: Space / Mission Control / フルスクリーンでの挙動を調整。
+        // collectionBehavior: controls Space / Mission Control / fullscreen behavior.
         //
-        // 要件:
-        //   - フルスクリーンアプリでは表示したくない → .fullScreenAuxiliary を外す
-        //   - Mission Control / Exposé / App Exposé では残って欲しくない → .transient
-        //   - 他 Space に切り替えたときは自動で追従してほしい → .moveToActiveSpace
+        // Requirements:
+        //   - Do not show above fullscreen apps -> drop .fullScreenAuxiliary
+        //   - Stay out of Mission Control / Exposé / App Exposé -> .transient
+        //   - Follow the active Space automatically -> .moveToActiveSpace
         //
-        //   .moveToActiveSpace : orderFront のたびにアクティブ Space に移る
-        //   .transient         : Exposé / Mission Control / Dock 上のウィンドウサムネ列から消える
-        //   .stationary        : Mission Control でスケールアニメに巻き込まれない
-        //                        (.transient で非表示になるが念のため付けておく)
+        //   .moveToActiveSpace : moves to the active Space on every orderFront
+        //   .transient         : excluded from Exposé, Mission Control, Dock window row
+        //   .stationary        : not caught by Mission Control's scale animation
+        //                        (.transient already hides us there; kept as a safety net)
         collectionBehavior = [.moveToActiveSpace, .transient, .stationary]
 
-        // 実際にボーダーを描くのは OverlayView 側。
-        // NSWindow の contentView に差し替える。
+        // The border itself is drawn by OverlayView.
+        // Replace the default contentView with our layer-backed view.
         contentView = OverlayView(frame: .zero)
     }
 
-    // borderless ウィンドウは既定で key window になれず、キーボード入力を奪わない。
-    // このアプリでは常にそれで問題ないが、念のため明示しておく。
+    // Borderless windows cannot become key by default, so keyboard input is not
+    // stolen. That is exactly what we want here, but we state it explicitly
+    // for future-proofing.
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }

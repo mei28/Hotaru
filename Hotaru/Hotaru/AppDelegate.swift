@@ -1,52 +1,59 @@
 import AppKit
 
-// NSApplicationDelegate: AppKit アプリのライフサイクル通知を受け取るプロトコル。
-// applicationDidFinishLaunching / applicationWillTerminate などがここに定義されている。
+// NSApplicationDelegate is the AppKit protocol for receiving app lifecycle
+// callbacks: applicationDidFinishLaunching / applicationWillTerminate and so on.
 //
-// NSObject を継承するのは、Obj-C ランタイム経由で AppKit から呼び出されるため。
-// Swift ネイティブ型のままだと selector / KVO / delegate 通知が動かない。
-// Rust で FFI 境界に C ABI が要求されるのと同じ発想で、AppKit 境界に Obj-C ABI が要求される。
+// We inherit NSObject because AppKit invokes methods through the Objective-C
+// runtime (selector, KVO, delegate notifications). A pure Swift type cannot
+// be called that way. The same mental model as Rust's FFI boundary requiring
+// C ABI — the AppKit boundary requires Obj-C ABI.
 //
-// final をつけているのは継承禁止の宣言。dynamic dispatch が static dispatch になり、
-// コンパイラが最適化しやすくなる。意図的に継承させないクラスには基本つけておく。
+// `final` forbids subclassing. Dynamic dispatch collapses to static dispatch,
+// which helps the compiler optimize. A good default for classes that are
+// not intended to be subclassed.
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
-    // MenuBarController を強参照で保持する。
-    // NSStatusItem は所有者がいなくなると ARC により即座に解放され、
-    // メニューバーからアイコンが消える。ここで生かし続ける責任を持つ。
-    // (Rust で Arc<T> を保持しないと drop されるのと同じ感覚)
+    // Hold MenuBarController with a strong reference. NSStatusItem is released
+    // by ARC as soon as nobody owns it, which makes the icon disappear from
+    // the menu bar. We take responsibility for keeping it alive.
+    // (Analogous to keeping an Arc<T> alive in Rust so the value is not dropped.)
     private var menuBarController: MenuBarController?
 
-    // FocusTracker も同様に強参照保持。deinit で NotificationCenter.removeObserver が
-    // 必要なので、ライフサイクルを制御するために AppDelegate が所有する。
+    // FocusTracker also needs a strong reference: its deinit calls
+    // NotificationCenter.removeObserver, so its lifetime must be controlled
+    // deterministically. AppDelegate owns it.
     private var focusTracker: FocusTracker?
 
-    // OverlayController: 透明ウィンドウの指揮係。
+    // OverlayController: coordinator for the transparent overlay window.
     private var overlayController: OverlayController?
 
-    // 現在アクティブなアプリ用の AX 観測器。アプリが切り替わるたびに作り直す。
-    // 古い observer は置き換え時に deinit → AXObserver / RunLoop source が自動で片付く。
+    // AX observer for the currently active app. Re-created on every app switch.
+    // Replacing this property releases the previous observer, whose deinit
+    // tears down the AXObserver and run-loop source.
     private var windowObserver: WindowObserver?
 
-    // アプリ起動が完了したタイミングで呼ばれる。
-    // NSApp が既に初期化済みで、UI を組み立てるのに安全な最初のポイント。
+    // Called when application launch is complete. NSApp is already initialized,
+    // which makes this the earliest safe place to build UI.
     func applicationDidFinishLaunching(_ notification: Notification) {
         let preferences = Preferences.shared
 
         menuBarController = MenuBarController(preferences: preferences)
 
-        // Phase 2: AX 権限をチェックし、なければ誘導アラートを出す。
-        // 権限がある場合は何もしないので毎回呼んで OK。
+        // Phase 2: check AX permission and nudge the user if it is missing.
+        // Harmless to call on every launch — does nothing when already granted.
         AccessibilityChecker.requestAccessIfNeeded()
 
-        // Phase 5+7: オーバーレイを Preferences で配線して生成。
-        // 色・幅・有効無効・ダークモード切替の追従は OverlayController 内部で行う。
+        // Phase 5+7: construct the overlay wired to preferences. Color, width,
+        // enabled flag and dark-mode tracking are all handled inside
+        // OverlayController.
         let overlay = OverlayController(preferences: preferences)
         overlayController = overlay
 
-        // Phase 3+4+5+6: アプリ切替でオーバーレイ即時更新 + そのアプリ用 AX 観測器を張り替え。
-        // [weak self, weak overlay] で循環参照回避。AppDelegate / OverlayController は
-        // どちらも AppDelegate が強参照しているので、closure 側は弱で十分。
+        // Phases 3+4+5+6: wire FocusTracker -> immediate overlay update, then
+        // swap in a fresh WindowObserver for the newly active app.
+        // [weak self, weak overlay] avoids reference cycles. Both AppDelegate
+        // and OverlayController live on the AppDelegate, so the closure can hold
+        // weak references safely.
         let tracker = FocusTracker()
         tracker.onFocusChanged = { [weak self, weak overlay] app, info in
             overlay?.update(windowInfo: info)
@@ -54,19 +61,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         focusTracker = tracker
 
-        // クロージャを繋いだ状態で初期状態を発火(起動直後のフロントアプリに枠を付ける)
+        // Fire the initial state now that the closure is wired (so the border
+        // appears around whichever app is frontmost at launch).
         tracker.emitInitial()
     }
 
-    // Phase 6: アクティブアプリが変わるたびに新しい WindowObserver に張り替える。
-    // 旧 observer は代入により解放され、deinit で notification / run-loop source が外れる。
+    // Phase 6: whenever the active app changes, replace the WindowObserver.
+    // Assigning to `windowObserver` releases the previous one; its deinit
+    // detaches notifications and removes the run-loop source.
     private func rebindWindowObserver(for app: NSRunningApplication) {
-        // closure が overlayController を弱参照するためのローカル束縛
+        // Local binding so the closure below can hold a weak reference.
         let overlay = overlayController
         windowObserver = WindowObserver(
             pid: app.processIdentifier
         ) { [weak overlay] info in
-            // move/resize/focus-change の通知が来るたびに呼ばれる
+            // Fires for every move / resize / focus-change notification.
             overlay?.update(windowInfo: info)
         }
     }

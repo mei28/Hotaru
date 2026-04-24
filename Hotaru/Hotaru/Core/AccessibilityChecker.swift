@@ -1,59 +1,66 @@
 import AppKit
-import ApplicationServices  // AX* 関数群はここ(AppKit が間接的に取り込むが明示しておく)
+import ApplicationServices  // Home of the AX* functions (AppKit pulls it in transitively; importing explicitly for clarity)
 
-// アクセシビリティ権限の有無を確認し、必要なら UI 誘導を出すユーティリティ。
-// Phase 2 では権限ゲートだけ。実際の AX API(ウィンドウ取得)は Phase 4 から。
+// Utility for checking the Accessibility permission and nudging the user to
+// grant it when missing. Phase 2 only deals with the gate; actual AX API usage
+// (window coordinates) starts in Phase 4.
 //
-// enum + static のパターンは Swift で「インスタンス化不可の純粋ユーティリティ」を
-// 型レベルで宣言する慣習。case を定義していない enum は値を生成できないので、
-// 誤って `AccessibilityChecker()` と書かれる心配がない。
-// (Java の final class + private コンストラクタ、Rust の uninhabited enum に近い)
+// The `enum + static` pattern is the Swift idiom for "pure utility that cannot
+// be instantiated". An enum with no cases cannot construct a value, which
+// prevents accidental calls like `AccessibilityChecker()` at the type level.
+// (Analogous to Java's `final class` + private constructor, or Rust's
+// uninhabited enum.)
 enum AccessibilityChecker {
 
-    // 現在権限があるかだけを調べる(副作用なし・ダイアログも出ない)。
-    // 起動後に UI から任意のタイミングで確認したい時に使う。
+    // Read the current trust status without side effects (no prompt).
+    // Useful when the UI needs to poll the permission state later in runtime.
     static var isTrusted: Bool {
         AXIsProcessTrusted()
     }
 
-    // 権限を要求する。初回の呼び出しでは macOS 標準の許可ダイアログが出て、
-    // 同時に「システム設定 > プライバシーとセキュリティ > アクセシビリティ」の
-    // リストに Hotaru が登録される(= ユーザーがオンに切り替えやすくなる)。
+    // Request trust. On the first call, macOS shows its standard permission
+    // dialog and also registers the app into the "System Settings > Privacy &
+    // Security > Accessibility" list (so the user can flip the toggle easily).
     //
-    // 2 回目以降は既に登録済みなので、OS 側のダイアログは出ない。
-    // 返り値は「このタイミングで trusted か」― ダイアログを出した直後は通常 false。
+    // On subsequent calls the app is already registered and no OS dialog is
+    // shown. The return value is the trust state at this very moment — right
+    // after prompting it is typically false.
     @discardableResult
     static func requestTrust() -> Bool {
-        // kAXTrustedCheckOptionPrompt は C 側では CFStringRef 定数だが、
-        // Swift には Unmanaged<CFString> として入ってくる。
-        // Unmanaged<T> = "ARC の管理外にある参照" を表す型で、
-        // C 関数が返す raw pointer を「誰が所有するか」が曖昧な場面で使われる。
+        // kAXTrustedCheckOptionPrompt is a CFStringRef constant on the C side,
+        // but Swift imports it as Unmanaged<CFString>.
+        // Unmanaged<T> represents "a reference outside ARC's management",
+        // which C functions use when ownership of the returned raw pointer is
+        // ambiguous.
         //
-        // .takeUnretainedValue() は「参照カウントを上げずに中身を取り出す」操作。
-        // 定数なので誰も所有していない扱い = 参照カウントに触れないのが正解。
-        // (もし Create/Copy 系の C 関数が返した Unmanaged なら
-        //  .takeRetainedValue() を使い、カウントを引き取りながら取り出す。
-        //  Rust で C から受け取った raw ptr を Box::from_raw で所有するかどうかの判断に近い)
+        // .takeUnretainedValue() extracts the value without incrementing the
+        // retain count. For a constant (no owner) this is the correct choice.
+        // (If the constant had come from a Create/Copy-style C function we
+        // would use .takeRetainedValue() to take ownership of the count.
+        // Similar to deciding whether to Box::from_raw a C-returned raw ptr
+        // in Rust.)
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue()
 
-        // Swift Dictionary から CFDictionary への "toll-free bridging"。
-        // CFString / CFBoolean 系はそのまま Swift の String / Bool と相互変換できる。
+        // Toll-free bridging from Swift Dictionary to CFDictionary.
+        // CFString / CFBoolean values bridge freely to String / Bool.
         let options: CFDictionary = [key: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    // macOS の「システム設定 > プライバシーとセキュリティ > アクセシビリティ」を開く。
-    // x-apple.systempreferences: は macOS が提供する深いリンク用 URL スキーム。
+    // Open "System Settings > Privacy & Security > Accessibility" directly.
+    // x-apple.systempreferences: is the URL scheme macOS provides for deep
+    // linking into specific panes.
     static func openSystemSettings() {
         let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         guard let url = URL(string: urlString) else { return }
         NSWorkspace.shared.open(url)
     }
 
-    // 権限がなければ自前の説明アラートを出し、OK ならシステム設定へ誘導する。
-    // @MainActor は「この関数はメインスレッド専用」のコンパイル時保証。
-    // NSAlert などの AppKit UI はメインスレッドでしか触れないので、他スレッドからの
-    // 呼び出しはコンパイルエラーにしてもらう。
+    // Show a custom explanation alert, then route the user to System Settings
+    // on confirm.
+    // @MainActor is a compile-time guarantee that this function only runs on
+    // the main thread. AppKit UI (NSAlert etc.) must be touched from main, so
+    // the compiler rejects calls from other threads.
     @MainActor
     static func requestAccessIfNeeded() {
         guard !isTrusted else { return }
@@ -66,15 +73,17 @@ enum AccessibilityChecker {
         Hotaru を一度終了して再起動してください。
         """
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "システム設定を開く")  // returns .alertFirstButtonReturn
-        alert.addButton(withTitle: "あとで")              // returns .alertSecondButtonReturn
+        alert.addButton(withTitle: "システム設定を開く")  // -> .alertFirstButtonReturn
+        alert.addButton(withTitle: "あとで")              // -> .alertSecondButtonReturn
 
-        // runModal() は押下までブロックする同期モーダル。
-        // 返り値は NSApplication.ModalResponse(.alertFirstButtonReturn など)。
+        // runModal() is a synchronous modal — blocks until the user clicks.
+        // The return value is NSApplication.ModalResponse
+        // (.alertFirstButtonReturn etc.).
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
-            // requestTrust() を一度呼ぶことで、アプリがリストに登録される(= 初回のみ効果あり)。
-            // その後 openSystemSettings() で設定画面に飛ばす。
+            // Calling requestTrust() once registers the app in the Accessibility
+            // list (only effective on first run). Then openSystemSettings()
+            // takes the user to the settings pane.
             _ = requestTrust()
             openSystemSettings()
         }

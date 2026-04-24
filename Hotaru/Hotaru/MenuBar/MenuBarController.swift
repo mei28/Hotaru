@@ -1,18 +1,19 @@
 import AppKit
 import Combine
 
-// メニューバーアイコンとプルダウンメニューを管理するクラス。
-// Phase 7: 設定項目の "Hotaru 有効" "設定…" "About" "終了" を揃え、
-// Preferences の変化に応じて有効トグル項目の見出しを更新する。
+// Manages the menu-bar icon and its pulldown menu.
+// Phase 7: full menu matching SPEC §3.1 — enable toggle, Settings…, About, Quit.
+// The enable-toggle item's title updates in response to Preferences changes.
 final class MenuBarController: NSObject {
 
     private let statusItem: NSStatusItem
     private let preferences: Preferences
 
-    // 動的に文面を書き換える項目への参照(checkmark を使う代わりに title 切替方式を採用)
+    // Reference to items whose title we rewrite dynamically
+    // (we rewrite the title rather than toggling a checkmark).
     private var enableMenuItem: NSMenuItem?
 
-    // Combine の購読トークン置き場(OverlayController と同じイディオム)
+    // Combine cancellables bag (same idiom as OverlayController).
     private var cancellables = Set<AnyCancellable>()
 
     init(preferences: Preferences) {
@@ -31,9 +32,9 @@ final class MenuBarController: NSObject {
 
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
-        // SF Symbols `sparkles`: 蛍の発光感を意識した複数粒のキラキラ。
-        // NSImage.isTemplate = true にしておくとメニューバー背景色に応じた
-        // 自動ティント(ライトで黒、ダークで白)が効く。
+        // SF Symbols `sparkles`: multi-particle sparkle, evoking a firefly's glow.
+        // Setting isTemplate = true makes the menu bar tint the image
+        // automatically (black on light, white on dark).
         let image = NSImage(
             systemSymbolName: "sparkles",
             accessibilityDescription: "Hotaru"
@@ -45,7 +46,7 @@ final class MenuBarController: NSObject {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        // 1. 有効/無効トグル
+        // 1. Enable / disable toggle
         let enable = makeItem(
             title: toggleTitle(for: preferences.isEnabled),
             action: #selector(toggleEnabled(_:)),
@@ -56,7 +57,7 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        // 2. 設定…(Cmd+,)
+        // 2. Settings… (Cmd+,)
         menu.addItem(makeItem(
             title: "設定…",
             action: #selector(openSettings(_:)),
@@ -82,7 +83,7 @@ final class MenuBarController: NSObject {
         return menu
     }
 
-    // NSMenuItem 生成のヘルパ。target = self を必ずセット。
+    // Helper for building NSMenuItem. Always sets target = self.
     private func makeItem(title: String, action: Selector, key: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
@@ -96,9 +97,9 @@ final class MenuBarController: NSObject {
     // MARK: - Subscriptions
 
     private func subscribeToPreferences() {
-        // isEnabled の変化にあわせて、メニュー項目の見出しを書き換える。
-        // objectWillChange は "これから変わる" なので、RunLoop.main で 1 tick ずらして
-        // 新しい値を読む(= 変更後のタイミングに合わせる)。
+        // Rewrite the toggle-item title whenever isEnabled changes.
+        // objectWillChange fires *before* the change, so we defer one tick via
+        // RunLoop.main to read the post-change value.
         preferences.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
@@ -115,15 +116,16 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func openSettings(_ sender: Any?) {
-        // SwiftUI の Settings シーン + showSettingsWindow: セレクタの経路は
-        // LSUIElement アプリで安定しないため、自前の SettingsWindowController を使う。
+        // The SwiftUI Settings scene + showSettingsWindow: selector path is
+        // unreliable for LSUIElement apps, so we use our own NSWindowController
+        // instead.
         SettingsWindowController.shared.show()
     }
 
     @objc private func openAbout(_ sender: Any?) {
         NSApp.activate()
-        // About パネルは AppKit が持っている標準ダイアログ。
-        // 特定の受信者を指定しなくても、NSApp が直接ハンドルする。
+        // The About panel is a standard AppKit dialog. No specific receiver is
+        // needed — NSApp handles it directly.
         NSApp.orderFrontStandardAboutPanel(sender)
     }
 

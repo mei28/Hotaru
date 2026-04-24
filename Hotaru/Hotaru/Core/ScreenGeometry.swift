@@ -1,33 +1,34 @@
 import AppKit
 
-// AX 座標系 ⇄ Cocoa 座標系 の変換ユーティリティ。
+// Utilities for converting between the AX and Cocoa coordinate systems.
 //
-// AX 座標系 (Accessibility API が返す):
-//   - 原点: プライマリスクリーンの左上
-//   - Y 軸: 下向きに増加(Windows / iOS と同じ)
+// AX coordinate system (what the Accessibility API returns):
+//   - Origin: top-left of the primary screen
+//   - Y axis: increases downward (same as Windows / iOS)
 //
-// Cocoa 座標系 (NSWindow.frame などで使う):
-//   - 原点: プライマリスクリーンの左下
-//   - Y 軸: 上向きに増加(数学的な直交座標)
+// Cocoa coordinate system (what NSWindow.frame uses):
+//   - Origin: bottom-left of the primary screen
+//   - Y axis: increases upward (standard mathematical convention)
 //
-// 両系とも X 軸は右向きで同じ。Y 軸だけが反転している。
-// 基準は "プライマリスクリーン" の高さ。マルチディスプレイでも
-// この基準で統一されている(セカンダリは拡張座標で扱う)。
+// X axes point right in both systems; only the Y axis is flipped. The
+// reference is the primary screen's height, even on a multi-display setup
+// (secondary displays sit in extended coordinates relative to that origin).
 enum ScreenGeometry {
 
-    // プライマリスクリーン(メニューバーがある画面、常に NSScreen.screens.first)の高さ。
-    // ディスプレイがまったく無い状況は通常ありえないが、Optional に備えて 0 にフォールバック。
+    // Height of the primary screen (the one that owns the menu bar; always
+    // NSScreen.screens.first). Normally there is at least one display, but we
+    // fall back to 0 just in case the Optional is nil.
     static var primaryScreenHeight: CGFloat {
         NSScreen.screens.first?.frame.height ?? 0
     }
 
-    // AX 座標の矩形を Cocoa 座標に変換する。
+    // Convert an AX-space rectangle to Cocoa space.
     //
-    // 変換式:   cocoaY = primaryHeight - axY - windowHeight
+    // Formula: cocoaY = primaryHeight - axY - windowHeight
     //
-    // - windowHeight を引くのは、AX の原点がウィンドウの "左上"、
-    //   Cocoa の NSWindow 原点がウィンドウの "左下" を指すため。
-    //   ウィンドウの上端 Y を下端 Y に平行移動する分だけ引いている。
+    // The windowHeight subtraction is there because AX's origin points at the
+    // window's top-left while NSWindow's origin points at the bottom-left. We
+    // shift the top Y down by windowHeight to reach the bottom Y.
     static func convertAXToCocoa(_ axFrame: CGRect) -> CGRect {
         let cocoaY = primaryScreenHeight - axFrame.origin.y - axFrame.size.height
         return CGRect(

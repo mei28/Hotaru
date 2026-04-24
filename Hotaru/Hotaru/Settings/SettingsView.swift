@@ -1,14 +1,16 @@
 import SwiftUI
 import AppKit
 
-// 設定ウィンドウの SwiftUI ビュー。
-// App 側の `Settings { SettingsView(...) }` シーンに差し込まれて、アプリメニュー
-// (あるいはメニューバーの「設定…」)から開かれる。
+// SwiftUI view for the settings window.
+// Embedded either in the App's `Settings { SettingsView(...) }` scene (opened
+// from the app menu) or inside our own NSWindow via SettingsWindowController.
 //
-// SwiftUI の考え方:
-//   - @ObservedObject で Preferences(ObservableObject)を監視。値変更で View 再描画。
-//   - $preferences.xxx でプロパティに対する Binding<T> を得る(2-way バインディング)。
-//   - NSColor は SwiftUI.Color と互換がないので、Binding<Color> を get/set で橋渡しする。
+// SwiftUI essentials used here:
+//   - @ObservedObject watches an ObservableObject (Preferences); any change
+//     triggers a re-render.
+//   - $preferences.xxx yields a Binding<T> for two-way binding.
+//   - NSColor is not interchangeable with SwiftUI.Color, so we bridge through
+//     a custom Binding<Color> that has explicit get/set closures.
 struct SettingsView: View {
     @ObservedObject var preferences: Preferences
 
@@ -31,12 +33,13 @@ struct SettingsView: View {
                     supportsOpacity: false
                 )
 
-                // Slider は Double を受ける。CGFloat → Double の変換は Binding で行う。
+                // Slider binds to Double; the CGFloat <-> Double conversion
+                // happens inside the custom Binding.
                 HStack {
                     Text("幅")
                     Slider(value: widthBinding, in: 1...10, step: 1)
                     Text("\(Int(preferences.borderWidth))px")
-                        .monospacedDigit()  // 数字幅を等幅化し、値変動でズレないように
+                        .monospacedDigit()  // equal digit widths so the value does not jitter
                         .frame(width: 40, alignment: .trailing)
                 }
             }
@@ -53,32 +56,32 @@ struct SettingsView: View {
                 }
             }
         }
-        .formStyle(.grouped)  // macOS System Settings 風のカードスタイル
+        .formStyle(.grouped)  // card-based style, similar to macOS System Settings
         .frame(width: 480, height: 520)
     }
 
-    // MARK: - プレビュー
+    // MARK: - Preview
 
     private var previewRect: some View {
         RoundedRectangle(cornerRadius: 12)
             .stroke(previewColor, lineWidth: preferences.borderWidth)
     }
 
-    // プレビューは今の外観(ライト/ダーク)に合わせた色で描画する。
-    // LSUIElement アプリは NSApp.effectiveAppearance が固定されるため、
-    // システムのダークモード判定はグローバル UserDefaults キー AppleInterfaceStyle
-    // を読む方式で行う(Dark=ダーク、nil=ライト)。
+    // Draw the preview with the color that matches the current appearance.
+    // NSApp.effectiveAppearance is pinned for LSUIElement apps, so we read
+    // the global UserDefaults key AppleInterfaceStyle instead
+    // (Dark -> dark mode, nil -> light mode).
     private var previewColor: Color {
         let isDark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
         let ns = isDark ? preferences.borderColorDark : preferences.borderColorLight
         return Color(nsColor: ns)
     }
 
-    // MARK: - Binding ブリッジ
+    // MARK: - Binding bridges
 
-    // ColorPicker は Binding<Color> を要求する。Preferences は NSColor を持つので、
-    // get/set 両方向を自前で書く「カスタム Binding」を作って橋渡しする。
-    // Rust の From/Into 両方向実装と似た感覚。
+    // ColorPicker wants a Binding<Color>. Preferences holds NSColor, so we
+    // hand-roll a two-way Binding that converts in both directions.
+    // Similar in spirit to implementing both From and Into in Rust.
     private var lightColorBinding: Binding<Color> {
         Binding(
             get: { Color(nsColor: preferences.borderColorLight) },
@@ -93,7 +96,7 @@ struct SettingsView: View {
         )
     }
 
-    // Slider は Binding<Double> を要求。CGFloat との変換もここで吸収。
+    // Slider needs a Binding<Double>, so absorb the CGFloat conversion here.
     private var widthBinding: Binding<Double> {
         Binding(
             get: { Double(preferences.borderWidth) },

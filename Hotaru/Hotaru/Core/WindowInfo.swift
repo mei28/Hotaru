@@ -1,14 +1,16 @@
 import Foundation
 
-// AX 経由で取得したウィンドウ情報の Swift 側表現。
-// ここでの position は "AX 座標系"(プライマリスクリーン左上が原点、Y 軸下向き)。
-// Cocoa 座標系への変換は ScreenGeometry 側で行う。
+// Swift-side representation of the window info we obtained via AX.
+// `position` is expressed in the AX coordinate system (origin at the
+// primary screen's top-left, Y increases downward).
+// Conversion to the Cocoa coordinate system lives in ScreenGeometry.
 //
-// struct にしているのは値型(コピー時に内容複製、他の誰かが書き換えない)で扱いたいから。
-// class にすると同じインスタンスを共有することになり、状態追跡が面倒になる。
-// Rust の struct(= 値型)と同じ感覚。
+// We use a struct (value type: copied on assignment, not shared by reference)
+// to keep state tracking simple. A class would let callers observe mutations
+// through shared references, which is unnecessary here.
+// Same spirit as a plain Rust struct (value type).
 struct WindowInfo: Equatable {
-    let position: CGPoint  // AX 座標系
+    let position: CGPoint  // AX coordinate system
     let size: CGSize
 
     var frame: CGRect {
