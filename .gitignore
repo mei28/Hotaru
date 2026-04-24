@@ -28,6 +28,11 @@ Package.resolved
 # compile_commands.json は生成物なので無視
 compile_commands.json
 
+# ==== Swift ランタイム生成物 ====
+# coverage-instrumented build を走らせると作られる
+*.profraw
+*.profdata
+
 # ==== macOS ====
 .DS_Store
 .AppleDouble

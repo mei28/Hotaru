@@ -30,6 +30,7 @@ final class FocusTracker: NSObject {
         // NSWorkspace.frontmostApplication は Optional なので if let で取り出す。
         if let app = NSWorkspace.shared.frontmostApplication {
             logActive(app, reason: "initial")
+            logFocusedWindow(for: app)
         }
     }
 
@@ -51,6 +52,7 @@ final class FocusTracker: NSObject {
             return
         }
         logActive(app, reason: "switch")
+        logFocusedWindow(for: app)
     }
 
     private func logActive(_ app: NSRunningApplication, reason: String) {
@@ -60,5 +62,20 @@ final class FocusTracker: NSObject {
         let bundleID = app.bundleIdentifier ?? "(no bundle id)"
         let pid = app.processIdentifier
         print("[FocusTracker \(reason)] \(name) — \(bundleID) — pid=\(pid)")
+    }
+
+    // Phase 4: AX 経由でフォーカスウィンドウの座標を取得し、AX 座標と Cocoa 座標の両方を出す。
+    // Electron 系アプリ(Slack / Dia など)は AX ツリーが貧弱で nil が返ることがある。
+    private func logFocusedWindow(for app: NSRunningApplication) {
+        guard let info = AXWindowQuery.focusedWindowInfo(pid: app.processIdentifier) else {
+            print("  └ no focused window (AX 未許可 / 対象アプリが応答なし / ウィンドウ無し)")
+            return
+        }
+        let axFrame = info.frame
+        let cocoaFrame = ScreenGeometry.convertAXToCocoa(axFrame)
+        print(String(format: "  └ AX    origin=(%.0f, %.0f)  size=(%.0f × %.0f)",
+                     axFrame.origin.x, axFrame.origin.y, axFrame.size.width, axFrame.size.height))
+        print(String(format: "  └ Cocoa origin=(%.0f, %.0f)  size=(%.0f × %.0f)",
+                     cocoaFrame.origin.x, cocoaFrame.origin.y, cocoaFrame.size.width, cocoaFrame.size.height))
     }
 }
