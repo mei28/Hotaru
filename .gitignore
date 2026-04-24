@@ -51,6 +51,10 @@ dist/
 # ==== Claude Code ローカル設定 ====
 .claude/settings.local.json
 
+# ==== プライベートな設計・メモ ====
+CLAUDE.md
+SPEC.md
+
 # ==== ローカル専用 ====
 .tmp/
 .env

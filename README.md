@@ -104,8 +104,6 @@ Hotaru/Hotaru/
     └── MenuBarController.swift      # NSStatusItem + menu
 ```
 
-See [`SPEC.md`](./SPEC.md) for the detailed requirements (in Japanese).
-
 ## Releasing
 
 Tag push triggers a GitHub Actions job that produces a zipped Release build and attaches it to the GitHub Release.
