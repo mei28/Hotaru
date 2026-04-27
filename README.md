@@ -1,5 +1,10 @@
 # Hotaru
 
+[![CI](https://github.com/mei28/Hotaru/actions/workflows/ci.yml/badge.svg)](https://github.com/mei28/Hotaru/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/mei28/Hotaru)](https://github.com/mei28/Hotaru/releases/latest)
+[![License](https://img.shields.io/github/license/mei28/Hotaru)](./LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%2026%2B-blue)
+
 > A macOS menu bar app that draws a soft colored border around the active window.
 
 Since macOS Tahoe (Liquid Glass), telling the active window apart from inactive ones has become harder. Hotaru solves this by lighting a firefly-like border around whichever window has focus, following it as it moves and resizes.
