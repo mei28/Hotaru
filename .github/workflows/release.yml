@@ -44,3 +44,31 @@ jobs:
             "./dist/Hotaru-${{ steps.version.outputs.version }}.zip" \
             --title "Hotaru ${GITHUB_REF_NAME}" \
             --generate-notes
+
+      # Update Homebrew Cask + Nix flake metadata (version + sha256) and push
+      # back to main. Tag pushes are expected to originate from main, so the
+      # tag commit and the bump commit end up on the same branch.
+      - name: Bump Cask + flake
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ZIP="./dist/Hotaru-${VERSION}.zip"
+          SHA=$(shasum -a 256 "$ZIP" | awk '{print $1}')
+
+          # macos-latest ships BSD sed; -i '' is required.
+          sed -i '' -E "s/^  version \"[0-9.]+\"/  version \"${VERSION}\"/" Casks/hotaru.rb
+          sed -i '' -E "s/^  sha256 \"[0-9a-f]+\"/  sha256 \"${SHA}\"/" Casks/hotaru.rb
+
+          # flake.nix: top-level `version = "..."` and `sha256 = "..."` lines.
+          sed -i '' -E "s/^      version = \"[0-9.]+\";/      version = \"${VERSION}\";/" flake.nix
+          sed -i '' -E "s/^      sha256  = \"[0-9a-f]+\";/      sha256  = \"${SHA}\";/" flake.nix
+
+          if git diff --quiet Casks/hotaru.rb flake.nix; then
+            echo "Cask + flake already up to date; skipping commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/hotaru.rb flake.nix
+          git commit -m "chore(release): bump cask + flake to ${VERSION}"
+          git push origin HEAD:main
