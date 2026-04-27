@@ -1,0 +1,28 @@
+name: CI
+
+# main への push と main 宛ての PR で実行する。
+# tag push (v*) は release.yml 側で扱うので、こちらでは branches だけを監視する。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        # objectVersion 77 / PBXFileSystemSynchronizedRootGroup 用に Xcode 16+。
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
+
+      - name: Install tools
+        run: brew install just xcbeautify
+
+      - name: Build (Debug)
+        run: just build
