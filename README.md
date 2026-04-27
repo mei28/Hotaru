@@ -21,7 +21,38 @@ Since macOS Tahoe (Liquid Glass), telling the active window apart from inactive 
 
 ## Installation
 
-Hotaru is distributed as an **unsigned** `.app` bundle. Because there is no Apple Developer ID signature, macOS Gatekeeper blocks it on the first launch.
+Hotaru is distributed as an **unsigned** `.app` bundle. Pick whichever method you prefer.
+
+### Homebrew (Cask)
+
+The repository doubles as a [custom-URL Homebrew tap](https://docs.brew.sh/Taps#custom-url-taps), so no separate tap repo is needed.
+
+```bash
+brew tap mei28/hotaru https://github.com/mei28/Hotaru.git
+brew install --cask hotaru
+```
+
+Homebrew handles the quarantine attribute, so the Gatekeeper dance is skipped. On first launch, Hotaru still asks for the Accessibility permission — enable it in **System Settings → Privacy & Security → Accessibility** and relaunch.
+
+To upgrade after a new release: `brew update && brew upgrade --cask hotaru`. To remove: `brew uninstall --cask hotaru` (use `--zap` to also delete preferences).
+
+### Nix flake
+
+The flake fetches the same release zip and unpacks the `.app` into the Nix store. Apple Silicon (`aarch64-darwin`) only.
+
+```bash
+nix profile install github:mei28/Hotaru
+# or, ad-hoc:
+nix run github:mei28/Hotaru
+```
+
+The installed `.app` lives under `~/.nix-profile/Applications/Hotaru.app`. To make it visible to Spotlight/Launchpad, link it into `/Applications` or your home `~/Applications`:
+
+```bash
+ln -sfn "$HOME/.nix-profile/Applications/Hotaru.app" "$HOME/Applications/Hotaru.app"
+```
+
+### Manual download
 
 1. Download `Hotaru-<version>.zip` from the [latest release](https://github.com/mei28/Hotaru/releases/latest).
 2. Unzip and move `Hotaru.app` to `/Applications`.

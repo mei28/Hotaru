@@ -48,6 +48,11 @@ compile_commands.json
 # ==== 配布成果物 ====
 dist/
 
+# ==== Nix ====
+# `nix build` の result symlink。再現性は flake.lock 側で確保する
+result
+result-*
+
 # ==== Claude Code ローカル設定 ====
 .claude/settings.local.json
 
