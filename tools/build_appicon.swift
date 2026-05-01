@@ -4,6 +4,11 @@
 //  Loads the master PNG, applies a squircle mask (alpha outside),
 //  and writes all sizes the macOS AppIcon.appiconset expects.
 //
+//  Why NSBitmapImageRep instead of NSImage.lockFocus:
+//    NSImage.lockFocus uses the screen's backing scale, so on a Retina
+//    display a 16x16 NSImage actually paints into a 32x32 buffer and
+//    representations() returns a 32x32 PNG. We need exact pixel sizes.
+//
 
 import AppKit
 import CoreGraphics
@@ -16,40 +21,54 @@ guard let src = NSImage(contentsOfFile: sourcePath) else {
     exit(1)
 }
 
-func render(at side: CGFloat) -> NSImage {
-    let img = NSImage(size: NSSize(width: side, height: side))
-    img.lockFocusFlipped(false)
+func render(pixels side: Int) -> NSBitmapImageRep {
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: side,
+        pixelsHigh: side,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0
+    )!
+    // Force the rep to report its size in points equal to its pixel size,
+    // so the source draw() at (0,0,side,side) maps 1:1.
+    rep.size = NSSize(width: CGFloat(side), height: CGFloat(side))
+
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let ctx = NSGraphicsContext.current!.cgContext
 
     // Squircle clip
-    let r = side * 0.2237
-    let path = CGPath(roundedRect: CGRect(x: 0, y: 0, width: side, height: side),
+    let r = CGFloat(side) * 0.2237
+    let path = CGPath(roundedRect: CGRect(x: 0, y: 0, width: CGFloat(side), height: CGFloat(side)),
                       cornerWidth: r, cornerHeight: r, transform: nil)
     ctx.addPath(path)
     ctx.clip()
 
-    // Draw source filled to the canvas (preserving aspect via fitting square)
-    src.draw(in: NSRect(x: 0, y: 0, width: side, height: side),
+    src.draw(in: NSRect(x: 0, y: 0, width: CGFloat(side), height: CGFloat(side)),
              from: .zero,
              operation: .copy,
              fraction: 1.0)
-    img.unlockFocus()
-    return img
+
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
 }
 
-func savePNG(_ image: NSImage, _ name: String) {
-    guard let tiff = image.tiffRepresentation,
-          let rep = NSBitmapImageRep(data: tiff),
-          let data = rep.representation(using: .png, properties: [:]) else {
+func savePNG(_ rep: NSBitmapImageRep, _ name: String) {
+    guard let data = rep.representation(using: .png, properties: [:]) else {
         print("encode failed: \(name)"); return
     }
     let url = URL(fileURLWithPath: "\(outDir)/\(name)")
     try? data.write(to: url)
-    print("wrote \(url.path)")
+    print("wrote \(url.path) (\(rep.pixelsWide)x\(rep.pixelsHigh))")
 }
 
 // (filename, side in px)
-let outputs: [(String, CGFloat)] = [
+let outputs: [(String, Int)] = [
     ("icon_16x16.png",       16),
     ("icon_16x16@2x.png",    32),
     ("icon_32x32.png",       32),
@@ -64,6 +83,6 @@ let outputs: [(String, CGFloat)] = [
 ]
 
 for (name, side) in outputs {
-    savePNG(render(at: side), name)
+    savePNG(render(pixels: side), name)
 }
 print("done")
