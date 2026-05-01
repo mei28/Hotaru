@@ -49,6 +49,10 @@ build:
         -derivedDataPath {{derived_data}} \
         build | xcbeautify
 
+# art/icon_master.png から AppIcon.appiconset の全サイズを再生成
+icon:
+    swift tools/build_appicon.swift
+
 # ビルドして起動(通常起動。stdout は捨てられる)
 run: build
     open {{app_path}}
