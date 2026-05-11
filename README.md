@@ -9,6 +9,8 @@
 
 Since macOS Tahoe (Liquid Glass), telling the active window apart from inactive ones has become harder. Hotaru solves this by lighting a firefly-like border around whichever window has focus, following it as it moves and resizes.
 
+![Hotaru — find your active window at a glance](./store-assets/screenshots/hotaru-1-hero.png)
+
 ## Features
 
 - Colored border around the active window, updated live on move/resize
@@ -18,6 +20,8 @@ Since macOS Tahoe (Liquid Glass), telling the active window apart from inactive 
 - Launch at login (via `SMAppService`)
 - English / 日本語 UI with in-app switcher
 - Hidden in Mission Control, Exposé, and fullscreen apps
+
+![Hotaru — tune the glow: light/dark colors, width slider, menu bar icon](./store-assets/screenshots/hotaru-2-features.png)
 
 ## Installation
 
